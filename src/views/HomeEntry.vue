@@ -24,9 +24,18 @@ onMounted(() => {
   }
 })
 
-// 动态加载对应的组件
-const HomeWeb = defineAsyncComponent(() => import('./web/HomeWeb.vue'))
-const HomeMobile = defineAsyncComponent(() => import('./mobile/HomeMobile.vue'))
+// 动态加载对应的组件 - 优化加载性能
+const HomeWeb = defineAsyncComponent({
+  loader: () => import('./web/HomeWeb.vue'),
+  delay: 0,
+  timeout: 3000
+})
+
+const HomeMobile = defineAsyncComponent({
+  loader: () => import('./mobile/HomeMobile.vue'),
+  delay: 0,
+  timeout: 3000
+})
 
 // 根据设备类型选择组件
 const CurrentComponent = computed(() => {

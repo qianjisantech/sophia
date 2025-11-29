@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMenuStore } from '../stores/menu'
 
+const router = useRouter()
 const menuStore = useMenuStore()
 
 const tabItems = [
-  { key: 'home', label: '主页', icon: 'cloud' },
-  { key: 'favorites', label: '收藏', icon: 'star' },
-  { key: 'shared', label: '共享', icon: 'usergroup' },
-  { key: 'my', label: '我的', icon: 'user' }
+  { key: 'home', label: '主页', icon: 'home', path: '/home' },
+  { key: 'cloud', label: '云盘', icon: 'folder', path: '/cloud' },
+  { key: 'wiki', label: '知识库', icon: 'book', path: '/wiki' },
+  { key: 'my', label: '我的', icon: 'user', path: '/home' } // 暂时使用home，后续可以添加专门的我的页面
 ]
 
-const handleTabClick = (key: string) => {
+const handleTabClick = (key: string, path: string) => {
   menuStore.setActiveMenu(key)
+  router.push(path)
 }
 </script>
 
@@ -22,7 +24,7 @@ const handleTabClick = (key: string) => {
       v-for="item in tabItems"
       :key="item.key"
       :class="['tab-item', { active: menuStore.activeMenu === item.key }]"
-      @click="handleTabClick(item.key)"
+      @click="handleTabClick(item.key, item.path)"
     >
       <t-icon :name="item.icon" class="tab-icon" />
       <span class="tab-label">{{ item.label }}</span>

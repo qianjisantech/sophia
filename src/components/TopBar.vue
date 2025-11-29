@@ -2,6 +2,8 @@
 import { ref, computed, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessagePlugin, Icon } from 'tdesign-vue-next'
+import { useDevice } from '../composables/useDevice'
+import Logo from './Logo.vue'
 
 const props = defineProps<{
   sidebarVisible?: boolean
@@ -10,6 +12,8 @@ const props = defineProps<{
   showCreateButton?: boolean
   pageTitle?: string
 }>()
+
+const { isMobile } = useDevice()
 
 const emit = defineEmits<{
   'toggle-sidebar': []
@@ -133,27 +137,105 @@ const handleCreateMenuClick = (data: any) => {
 </script>
 
 <template>
-  <div class="top-bar">
-    <div class="top-bar-left">
-      <!-- 折叠按钮 -->
-      <t-button
-        v-if="!props.sidebarVisible"
-        variant="text"
-        shape="square"
-        class="menu-toggle-btn"
-        @click="toggleSidebar"
-      >
-        <t-icon name="menu-unfold" />
-      </t-button>
+  <div class="top-bar" :class="{ 'mobile-top-bar': isMobile }">
+    <!-- H5模式：简化的顶部栏 -->
+    <template v-if="isMobile">
+      <div class="mobile-top-left">
+        <!-- Logo组件 - 确保在H5模式下显示 -->
+        <div class="mobile-logo-container">
+          <Logo :size="'medium'" :show-text="false" />
+        </div>
+        <span v-if="props.pageTitle" class="mobile-page-label">{{ props.pageTitle }}</span>
+      </div>
+      <div class="mobile-top-right">
+        <t-button
+          variant="text"
+          shape="square"
+          class="mobile-search-icon-btn"
+          @click="toggleSearchExpanded"
+        >
+          <t-icon name="search" />
+        </t-button>
+        <!-- 搜索输入框 - 移动端展开时显示 -->
+        <div v-if="searchExpanded" class="mobile-search-input-wrapper">
+          <t-input
+            :model-value="searchKeyword"
+            :placeholder="props.searchPlaceholder || '搜索...'"
+            clearable
+            size="large"
+            @update:model-value="handleSearchUpdate"
+            @focus="handleSearchFocus"
+            @blur="handleSearchBlur"
+          >
+            <template #prefix-icon>
+              <t-icon name="search" />
+            </template>
+          </t-input>
+          <!-- 搜索面板遮罩 -->
+          <div v-if="showSearchPanel" class="search-overlay" @click="showSearchPanel = false"></div>
+          <!-- 搜索面板弹窗 -->
+          <div v-if="showSearchPanel && props.searchResults" class="search-panel mobile-search-panel" @mousedown.prevent>
+            <div class="search-panel-section">
+              <div class="search-section-title">
+                <slot name="search-title">
+                  {{ searchKeyword.trim() ? `搜索结果 (${props.searchResults.length})` : '最近访问' }}
+                </slot>
+              </div>
+              <div class="search-results">
+                <div
+                  v-for="item in props.searchResults.slice(0, 8)"
+                  :key="item.id"
+                  class="search-result-item"
+                  @click="handleResultClick(item)"
+                >
+                  <slot name="search-result-item" :item="item">
+                    <div class="result-icon">
+                      <t-icon name="file-text" />
+                    </div>
+                    <div class="result-content">
+                      <div class="result-title">{{ item.title }}</div>
+                      <div class="result-meta">
+                        <span>{{ item.folder }}</span>
+                      </div>
+                    </div>
+                    <div class="result-action">
+                      <t-icon name="chevron-right" />
+                    </div>
+                  </slot>
+                </div>
+                <div v-if="props.searchResults.length === 0" class="search-empty">
+                  <t-icon name="search" size="32px" />
+                  <p>{{ searchKeyword.trim() ? '没有找到相关内容' : '暂无内容' }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
 
-      <!-- 页面标题 -->
-      <h2 v-if="props.pageTitle" class="page-title-topbar">{{ props.pageTitle }}</h2>
-    </div>
+    <!-- 桌面模式：原有布局 -->
+    <template v-else>
+      <div class="top-bar-left">
+        <!-- 折叠按钮 -->
+        <t-button
+          v-if="!props.sidebarVisible"
+          variant="text"
+          shape="square"
+          class="menu-toggle-btn"
+          @click="toggleSidebar"
+        >
+          <t-icon name="menu-unfold" />
+        </t-button>
 
-    <div class="top-bar-center">
-    </div>
+        <!-- 页面标题 -->
+        <h2 v-if="props.pageTitle" class="page-title-topbar">{{ props.pageTitle }}</h2>
+      </div>
 
-    <div class="top-bar-right">
+      <div class="top-bar-center">
+      </div>
+
+      <div class="top-bar-right">
       <!-- 搜索框 -->
       <div class="search-bar">
         <!-- 搜索 icon 按钮 -->
@@ -234,6 +316,7 @@ const handleCreateMenuClick = (data: any) => {
               </div>
             </div>
           </div>
+        </div>
       </div>
 
       <t-button variant="text" shape="square" class="icon-button">
@@ -262,26 +345,27 @@ const handleCreateMenuClick = (data: any) => {
 
       <div class="divider-vertical"></div>
 
-      <!-- 用户信息 -->
-      <t-dropdown
-        :options="[
-          { content: '个人中心', value: 'profile', prefixIcon: () => h(Icon, { name: 'user' }) },
-          { content: '个人设置', value: 'settings', prefixIcon: () => h(Icon, { name: 'setting' }) },
-          { content: '退出登录', value: 'logout', theme: 'error', prefixIcon: () => h(Icon, { name: 'logout' }) }
-        ]"
-        @click="handleUserMenuClick"
-      >
-        <div class="user-info-trigger">
-          <t-avatar size="36px" class="user-avatar">{{ username.charAt(0).toUpperCase() }}</t-avatar>
-          <div class="user-info-text">
-            <span class="username">{{ username }}</span>
-            <span class="user-role">管理员</span>
+        <!-- 用户信息 -->
+        <t-dropdown
+          :options="[
+            { content: '个人中心', value: 'profile', prefixIcon: () => h(Icon, { name: 'user' }) },
+            { content: '个人设置', value: 'settings', prefixIcon: () => h(Icon, { name: 'setting' }) },
+            { content: '退出登录', value: 'logout', theme: 'error', prefixIcon: () => h(Icon, { name: 'logout' }) }
+          ]"
+          @click="handleUserMenuClick"
+        >
+          <div class="user-info-trigger">
+            <t-avatar size="36px" class="user-avatar">{{ username.charAt(0).toUpperCase() }}</t-avatar>
+            <div class="user-info-text">
+              <span class="username">{{ username }}</span>
+              <span class="user-role">管理员</span>
+            </div>
+            <t-icon name="chevron-down" size="16px" class="dropdown-icon" />
           </div>
-          <t-icon name="chevron-down" size="16px" class="dropdown-icon" />
-        </div>
-      </t-dropdown>
-    </div>
-    </div></div>
+        </t-dropdown>
+      </div>
+    </template>
+  </div>
 </template>
 
 <style scoped>
@@ -295,6 +379,249 @@ const handleCreateMenuClick = (data: any) => {
   position: relative;
   z-index: 100;
   overflow: visible;
+}
+
+/* H5模式顶部栏 */
+.top-bar.mobile-top-bar {
+  padding: 12px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.mobile-top-left {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  visibility: visible !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+.mobile-logo-container {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative !important;
+  z-index: 10 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.mobile-logo-container :deep(.sophia-logo) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.mobile-logo-container :deep(.logo-svg) {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.mobile-logo-container :deep(.logo-svg svg) {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* 确保在所有页面都能显示Logo */
+.top-bar.mobile-top-bar .mobile-logo-container {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* 强制在所有情况下显示Logo，包括知识库页面 */
+.mobile-top-bar .mobile-top-left .mobile-logo-container {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  width: 36px !important;
+  height: 36px !important;
+}
+
+.mobile-top-bar .mobile-top-left .mobile-logo-container .sophia-logo {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.mobile-top-bar .mobile-top-left .mobile-logo-container .logo-svg {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.mobile-page-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f1f1f;
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.mobile-top-right {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  visibility: visible !important;
+}
+
+.mobile-search-icon-btn {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+.mobile-search-icon-btn {
+  width: 40px !important;
+  height: 40px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  color: #1f1f1f !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.mobile-search-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+.mobile-search-icon-btn:active {
+  background: rgba(0, 0, 0, 0.1) !important;
+}
+
+.mobile-search-icon-btn :deep(.t-icon) {
+  font-size: 22px;
+  color: #1f1f1f;
+}
+
+/* 移动端搜索输入框 */
+.mobile-search-input-wrapper {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  padding: 8px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #f0f0f0;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.mobile-search-input-wrapper :deep(.t-input) {
+  width: 100%;
+}
+
+/* 移动端搜索面板 */
+.mobile-search-panel {
+  position: fixed;
+  top: calc(100% + 60px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: calc(100vh - 120px);
+  border-radius: 0;
+  box-shadow: none;
+  background: white;
+  z-index: 999;
+}
+
+.mobile-page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f1f1f;
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* 移动端响应式优化 */
+@media (max-width: 768px) {
+  .top-bar.mobile-top-bar {
+    padding: 10px 16px;
+    min-height: 48px;
+  }
+
+  .mobile-page-label {
+    font-size: 17px;
+  }
+
+  .mobile-search-icon-btn {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .mobile-search-icon-btn :deep(.t-icon) {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .top-bar.mobile-top-bar {
+    padding: 8px 12px;
+    min-height: 44px;
+  }
+
+  .mobile-top-left {
+    gap: 10px;
+  }
+
+  .mobile-page-label {
+    font-size: 16px;
+  }
+
+  .mobile-search-icon-btn {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .mobile-search-icon-btn :deep(.t-icon) {
+    font-size: 18px;
+  }
 }
 
 .top-bar-left {

@@ -1,15 +1,22 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useDocumentStore } from '../../stores/document'
 import { useMenuStore } from '../../stores/menu'
 import { MessagePlugin, Icon } from 'tdesign-vue-next'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import PullToRefresh from '../../components/PullToRefresh.vue'
+import TopBar from '../../components/TopBar.vue'
 import { useDevice } from '../../composables/useDevice'
+
+// 组件名称，用于keep-alive
+defineOptions({
+  name: 'HomeMobile'
+})
 
 
 const router = useRouter()
+const route = useRoute()
 const documentStore = useDocumentStore()
 const menuStore = useMenuStore()
 
@@ -18,6 +25,19 @@ const { isMobile, deviceType } = useDevice()
 
 // 当前激活的菜单（从 menuStore 获取）
 const currentMenu = computed(() => menuStore.activeMenu)
+
+// 根据路由获取页面标题
+const pageTitle = computed(() => {
+  const path = route.path
+  if (path === '/cloud') {
+    return '云盘'
+  } else if (path === '/home' || path === '/') {
+    return '主页'
+  } else if (path === '/wiki') {
+    return '知识库'
+  }
+  return '主页'
+})
 
 // 用户信息
 const username = computed(() => localStorage.getItem('username') || '用户')
@@ -43,7 +63,7 @@ const handleAboutClick = () => {
 // 刷新页面
 const handleRefresh = async () => {
   await documentStore.loadDocuments()
-  MessagePlugin.success('刷新成功')
+  // H5模式下不显示刷新成功提示
 }
 
 // 跳转到搜索页面
@@ -448,19 +468,15 @@ const columns: any[] = [
     <PullToRefresh :onRefresh="handleRefresh" :disabled="!isMobile">
       <div class="main-content">
       <!-- 顶部栏 -->
-      <div class="top-bar">
-        <!-- H5模式：左侧Logo + 右侧搜索图标 -->
-        <div v-if="isMobile" class="mobile-top-bar">
-          <div class="mobile-logo">
-            <div class="logo-icon">S</div>
-          </div>
-          <t-button variant="text" shape="square" class="mobile-search-btn" @click="goToSearch">
-            <t-icon name="search" />
-          </t-button>
-        </div>
-
-        <!-- 桌面模式：原有搜索栏 -->
-        <div v-else class="top-bar-left">
+      <TopBar
+        :sidebar-visible="false"
+        :page-title="pageTitle"
+        :show-create-button="false"
+      />
+      
+      <!-- 桌面模式：原有搜索栏（保留用于桌面端） -->
+      <div v-if="!isMobile" class="top-bar-desktop">
+        <div class="top-bar-left">
           <div class="search-bar">
             <t-input
               v-model="searchKeyword"
@@ -774,7 +790,7 @@ const columns: any[] = [
           </t-form-item>
         </t-form>
       </t-dialog>
-    </div>
+      </div>
     </PullToRefresh>
 
     <!-- 移动端浮动新建按钮和菜单 -->
@@ -878,8 +894,8 @@ const columns: any[] = [
   background: var(--bg-white);
 }
 
-/* Apple 风格顶部栏 - 毛玻璃效果 */
-.top-bar {
+/* 桌面端顶部栏样式 */
+.top-bar-desktop {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -889,60 +905,6 @@ const columns: any[] = [
   -webkit-backdrop-filter: var(--backdrop-blur);
   flex-shrink: 0;
   height: 56px;
-}
-
-/* H5模式顶部栏 */
-.mobile-top-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 0 4px;
-}
-
-.mobile-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.logo-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #0052D9 0%, #1677FF 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: 22px;
-  font-weight: 700;
-  font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif;
-  letter-spacing: -0.5px;
-  box-shadow: 0 2px 8px rgba(0, 82, 217, 0.2);
-}
-
-.logo-text {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-}
-
-.mobile-search-btn {
-  width: 40px !important;
-  height: 40px !important;
-  border-radius: 8px !important;
-  color: var(--text-primary) !important;
-  transition: all 0.2s ease !important;
-}
-
-.mobile-search-btn:hover {
-  background: rgba(0, 0, 0, 0.06) !important;
-}
-
-.mobile-search-btn :deep(.t-icon) {
-  font-size: 22px;
 }
 
 .top-bar-left {

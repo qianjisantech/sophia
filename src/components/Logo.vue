@@ -2,18 +2,18 @@
   <div class="sophia-logo" :class="{ small: size === 'small', large: size === 'large' }">
     <svg viewBox="0 0 48 48" class="logo-svg" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="sophiaGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient :id="gradientId" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" style="stop-color:#0052D9;stop-opacity:1" />
           <stop offset="100%" style="stop-color:#1677FF;stop-opacity:1" />
         </linearGradient>
-        <filter id="shadow">
+        <filter :id="filterId">
           <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.2"/>
         </filter>
       </defs>
 
       <!-- 背景圆角矩形 -->
       <rect x="2" y="2" width="44" height="44" rx="12" ry="12"
-            fill="url(#sophiaGradient)" filter="url(#shadow)"/>
+            :fill="`url(#${gradientId})`" :filter="`url(#${filterId})`"/>
 
       <!-- S 字母 - 现代设计 -->
       <path d="M 15 16
@@ -50,6 +50,11 @@ withDefaults(defineProps<Props>(), {
   size: 'medium',
   showText: true
 })
+
+// 生成唯一的ID，避免SVG ID冲突
+const uniqueId = `logo-${Math.random().toString(36).substr(2, 9)}`
+const gradientId = `sophiaGradient-${uniqueId}`
+const filterId = `shadow-${uniqueId}`
 </script>
 
 <style scoped>

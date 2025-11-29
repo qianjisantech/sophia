@@ -101,7 +101,15 @@ const routes: RouteRecordRaw[] = [
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
+  // 优化滚动行为
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) {
+      return savedPosition
+    } else {
+      return { top: 0, behavior: 'smooth' }
+    }
+  }
 })
 
 // 路由守卫：检查登录状态
@@ -120,5 +128,55 @@ router.beforeEach((to, from, next) => {
     next()
   }
 })
+
+// H5模式下预加载常用路由（延迟执行，不阻塞初始渲染）
+if (typeof window !== 'undefined') {
+  const preloadRoutes = () => {
+    if (window.innerWidth <= 768) {
+      // 延迟预加载，在空闲时执行
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => {
+          const routes = ['/home', '/cloud', '/wiki']
+          routes.forEach(path => {
+            try {
+              const resolved = router.resolve(path)
+              resolved.matched.forEach(match => {
+                if (match.components?.default && typeof match.components.default === 'function') {
+                  match.components.default()
+                }
+              })
+            } catch (e) {
+              // 忽略预加载错误
+            }
+          })
+        }, { timeout: 2000 })
+      } else {
+        // 降级方案
+        setTimeout(() => {
+          const routes = ['/home', '/cloud', '/wiki']
+          routes.forEach(path => {
+            try {
+              const resolved = router.resolve(path)
+              resolved.matched.forEach(match => {
+                if (match.components?.default && typeof match.components.default === 'function') {
+                  match.components.default()
+                }
+              })
+            } catch (e) {
+              // 忽略预加载错误
+            }
+          })
+        }, 2000)
+      }
+    }
+  }
+  
+  // 页面加载完成后预加载
+  if (document.readyState === 'complete') {
+    preloadRoutes()
+  } else {
+    window.addEventListener('load', preloadRoutes)
+  }
+}
 
 export default router

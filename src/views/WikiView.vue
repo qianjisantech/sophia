@@ -1,15 +1,26 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { getWikisDB } from '../mock/data'
 import type { Wiki } from '../types/wiki'
 import TopBar from '../components/TopBar.vue'
+import BottomTabBar from '../components/BottomTabBar.vue'
+import PullToRefresh from '../components/PullToRefresh.vue'
+import { useDevice } from '../composables/useDevice'
+
+// 组件名称，用于keep-alive
+defineOptions({
+  name: 'Wiki'
+})
 
 const router = useRouter()
+const { isMobile } = useDevice()
 const wikis = ref<Wiki[]>(getWikisDB())
 const searchKeyword = ref('')
 const activeTab = ref('all')
+const refreshing = ref(false)
+const showCreateMenu = ref(false)
 
 // 侧边栏折叠状态
 const props = defineProps<{
@@ -96,98 +107,130 @@ const handleCreateDocument = () => {
 const handleTemplates = () => {
   MessagePlugin.info('模版库功能开发中...')
 }
+
+// 下拉刷新
+const handleRefresh = async () => {
+  refreshing.value = true
+  // 模拟刷新数据
+  await new Promise(resolve => setTimeout(resolve, 1000))
+  wikis.value = getWikisDB()
+  refreshing.value = false
+  // H5模式下不显示刷新成功提示
+}
+
+// 切换创建菜单
+const toggleCreateMenu = () => {
+  showCreateMenu.value = !showCreateMenu.value
+}
+
+// 关闭创建菜单
+const closeCreateMenu = () => {
+  showCreateMenu.value = false
+}
+
+// 处理创建菜单项点击
+const handleCreateItemClick = (handler: () => void) => {
+  handler()
+  closeCreateMenu()
+}
+
+// 初始化
+onMounted(() => {
+  // 可以在这里加载数据
+})
 </script>
 
 <template>
   <div class="wiki-view">
-    <!-- 顶部栏 -->
+    <!-- 顶部栏 - 使用公用TopBar组件 -->
     <TopBar
       :sidebar-visible="props.sidebarVisible"
       page-title="知识库"
-      search-placeholder="搜索知识库..."
-      :search-results="filteredWikis"
+      :show-create-button="false"
       @toggle-sidebar="toggleSidebar"
-      @search-update="handleSearchUpdate"
-      @result-click="handleResultClick"
-    >
-      <template #search-title>
-        {{ searchKeyword.trim() ? `搜索结果 (${filteredWikis.length})` : '所有知识库' }}
-      </template>
-      <template #search-result-item="{ item }">
-        <div class="result-icon" :style="{ background: item.color || '#0052D9' }">
-          <t-icon name="book" style="color: white;" />
-        </div>
-        <div class="result-content">
-          <div class="result-title">{{ item.title }}</div>
-          <div class="result-meta">
-            <span>{{ item.documentCount }} 篇文档</span>
-            <span class="result-dot">·</span>
-            <span>{{ formatTime(item.updatedAt) }}</span>
-          </div>
-        </div>
-        <div class="result-action">
-          <t-icon name="chevron-right" />
-        </div>
-      </template>
-    </TopBar>
+    />
 
     <!-- 主内容区域 -->
-    <div class="main-content">
-      <!-- 功能卡片 -->
-      <div class="feature-cards">
-        <div class="feature-card" @click="handleCreateDocument">
-          <div class="feature-card-icon">
-            <t-icon name="add" size="20px" />
+    <PullToRefresh @refresh="handleRefresh" :refreshing="refreshing">
+      <div class="main-content" :class="{ 'mobile-content': isMobile }">
+        <!-- 桌面端功能卡片 -->
+        <div v-if="!isMobile" class="feature-cards">
+          <div class="feature-card" @click="handleCreateDocument">
+            <div class="feature-card-icon">
+              <t-icon name="add" size="20px" />
+            </div>
+            <div class="feature-card-content">
+              <div class="feature-card-title">新建</div>
+              <div class="feature-card-desc">创建新文档</div>
+            </div>
           </div>
-          <div class="feature-card-content">
-            <div class="feature-card-title">新建</div>
-            <div class="feature-card-desc">创建新文档</div>
+          <div class="feature-card" @click="handleTemplates">
+            <div class="feature-card-icon">
+              <t-icon name="folder-open" size="20px" />
+            </div>
+            <div class="feature-card-content">
+              <div class="feature-card-title">模版库</div>
+              <div class="feature-card-desc">使用文档模版</div>
+            </div>
+          </div>
+          <div class="feature-card" @click="handleCreateWiki">
+            <div class="feature-card-icon">
+              <t-icon name="book" size="20px" />
+            </div>
+            <div class="feature-card-content">
+              <div class="feature-card-title">新建知识库</div>
+              <div class="feature-card-desc">创建新知识库</div>
+            </div>
           </div>
         </div>
-        <div class="feature-card" @click="handleTemplates">
-          <div class="feature-card-icon">
-            <t-icon name="folder-open" size="20px" />
-          </div>
-          <div class="feature-card-content">
-            <div class="feature-card-title">模版库</div>
-            <div class="feature-card-desc">使用文档模版</div>
-          </div>
-        </div>
-        <div class="feature-card" @click="handleCreateWiki">
-          <div class="feature-card-icon">
-            <t-icon name="book" size="20px" />
-          </div>
-          <div class="feature-card-content">
-            <div class="feature-card-title">新建知识库</div>
-            <div class="feature-card-desc">创建新知识库</div>
-          </div>
-        </div>
-      </div>
 
-      <!-- Tab 导航 -->
-      <div class="wiki-tabs">
-        <div
-          class="wiki-tab"
-          :class="{ active: activeTab === 'all' }"
-          @click="activeTab = 'all'"
-        >
-          全部知识库
+        <!-- 移动端统计信息 -->
+        <div v-if="isMobile" class="mobile-stats">
+          <div class="stat-item">
+            <div class="stat-value">{{ filteredWikis.length }}</div>
+            <div class="stat-label">知识库</div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-item">
+            <div class="stat-value">{{ filteredWikis.reduce((sum, w) => sum + w.documentCount, 0) }}</div>
+            <div class="stat-label">文档</div>
+          </div>
         </div>
-      </div>
 
-      <!-- 知识库卡片网格 -->
-      <div class="wiki-grid">
-        <div
-          v-for="wiki in filteredWikis"
-          :key="wiki.id"
-          class="wiki-card"
-          @click="openWiki(wiki)"
-        >
-          <div class="wiki-card-inner" :style="{
-            background: `linear-gradient(135deg, ${wiki.color} 0%, ${wiki.color}dd 70%, ${wiki.color}bb 100%)`
-          }">
-            <div class="wiki-card-header">
-              <div class="wiki-actions">
+        <!-- Tab 导航 -->
+        <div class="wiki-tabs" :class="{ 'mobile-tabs': isMobile }">
+          <div
+            class="wiki-tab"
+            :class="{ active: activeTab === 'all' }"
+            @click="activeTab = 'all'"
+          >
+            全部知识库
+          </div>
+        </div>
+
+        <!-- 知识库卡片网格 -->
+        <div class="wiki-grid" :class="{ 'mobile-grid': isMobile }">
+          <div
+            v-for="wiki in filteredWikis"
+            :key="wiki.id"
+            class="wiki-card"
+            :class="{ 'mobile-card': isMobile }"
+            @click="openWiki(wiki)"
+          >
+            <div class="wiki-card-inner" :style="{
+              background: isMobile 
+                ? `linear-gradient(135deg, ${wiki.color}15 0%, ${wiki.color}08 100%)`
+                : `linear-gradient(135deg, ${wiki.color} 0%, ${wiki.color}dd 70%, ${wiki.color}bb 100%)`
+            }">
+              <!-- 移动端卡片头部 -->
+              <div v-if="isMobile" class="wiki-card-header-mobile">
+                <div class="wiki-icon-mobile" :style="{ background: wiki.color || '#0052D9' }">
+                  <t-icon name="book" />
+                </div>
+                <div class="wiki-header-content">
+                  <h3 class="wiki-title-mobile">{{ wiki.title }}</h3>
+                  <p class="wiki-description-mobile">{{ wiki.description }}</p>
+                </div>
                 <t-dropdown
                   :options="[
                     { content: '编辑', value: 'edit' },
@@ -196,53 +239,151 @@ const handleTemplates = () => {
                   ]"
                   @click.stop
                 >
-                  <t-button variant="text" shape="square" size="small">
+                  <t-button variant="text" shape="square" size="small" class="wiki-more-btn">
                     <t-icon name="more" />
                   </t-button>
                 </t-dropdown>
               </div>
-            </div>
 
-            <div class="wiki-card-body">
-              <h3 class="wiki-title">{{ wiki.title }}</h3>
-              <p class="wiki-description">{{ wiki.description }}</p>
+              <!-- 桌面端卡片头部 -->
+              <div v-else class="wiki-card-header">
+                <div class="wiki-actions">
+                  <t-dropdown
+                    :options="[
+                      { content: '编辑', value: 'edit' },
+                      { content: '分享', value: 'share' },
+                      { content: '删除', value: 'delete' }
+                    ]"
+                    @click.stop
+                  >
+                    <t-button variant="text" shape="square" size="small">
+                      <t-icon name="more" />
+                    </t-button>
+                  </t-dropdown>
+                </div>
+              </div>
 
-              <div class="wiki-tags">
-                <t-tag
-                  v-for="tag in wiki.tags?.slice(0, 3)"
-                  :key="tag"
-                  size="small"
-                  variant="light"
-                >
-                  {{ tag }}
-                </t-tag>
+              <!-- 桌面端卡片主体 -->
+              <div v-if="!isMobile" class="wiki-card-body">
+                <h3 class="wiki-title">{{ wiki.title }}</h3>
+                <p class="wiki-description">{{ wiki.description }}</p>
+
+                <div class="wiki-tags">
+                  <t-tag
+                    v-for="tag in wiki.tags?.slice(0, 3)"
+                    :key="tag"
+                    size="small"
+                    variant="light"
+                  >
+                    {{ tag }}
+                  </t-tag>
+                </div>
+              </div>
+
+              <!-- 移动端卡片底部 -->
+              <div v-if="isMobile" class="wiki-card-footer-mobile">
+                <div class="wiki-tags-mobile">
+                  <t-tag
+                    v-for="tag in wiki.tags?.slice(0, 2)"
+                    :key="tag"
+                    size="small"
+                    variant="light"
+                    :style="{ background: wiki.color + '20', color: wiki.color, borderColor: wiki.color + '40' }"
+                  >
+                    {{ tag }}
+                  </t-tag>
+                </div>
+                <div class="wiki-meta-mobile">
+                  <div class="wiki-meta-item">
+                    <t-icon name="file-copy" size="14px" />
+                    <span>{{ wiki.documentCount }} 篇</span>
+                  </div>
+                  <div class="wiki-meta-item">
+                    <t-icon name="time" size="14px" />
+                    <span>{{ formatTime(wiki.updatedAt) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 桌面端卡片底部 -->
+              <div v-else class="wiki-card-footer">
+                <div class="wiki-meta">
+                  <t-icon name="file-copy" size="14px" />
+                  <span>{{ wiki.documentCount }} 篇</span>
+                </div>
+                <div class="wiki-meta">
+                  <t-icon name="time" size="14px" />
+                  <span>{{ formatTime(wiki.updatedAt) }}</span>
+                </div>
               </div>
             </div>
+          </div>
+        </div>
 
-            <div class="wiki-card-footer">
-              <div class="wiki-meta">
-                <t-icon name="file-copy" size="14px" />
-                <span>{{ wiki.documentCount }} 篇</span>
+        <!-- 空状态 -->
+        <div v-if="filteredWikis.length === 0" class="empty-state" :class="{ 'mobile-empty': isMobile }">
+          <t-icon name="folder-open" :size="isMobile ? '48px' : '64px'" />
+          <p class="empty-text">{{ searchKeyword ? '没有找到相关知识库' : '还没有创建任何知识库' }}</p>
+          <t-button v-if="!searchKeyword" theme="primary" @click="handleCreateWiki">
+            <t-icon name="add" />
+            创建第一个知识库
+          </t-button>
+        </div>
+      </div>
+    </PullToRefresh>
+
+    <!-- 移动端浮动创建按钮 -->
+    <transition name="fade">
+      <div v-if="isMobile && !showCreateMenu" class="mobile-fab" @click="toggleCreateMenu">
+        <t-icon name="add" />
+      </div>
+    </transition>
+
+    <!-- 移动端创建菜单 -->
+    <transition name="slide-up">
+      <div v-if="isMobile && showCreateMenu" class="mobile-create-menu" @click.self="closeCreateMenu">
+        <div class="create-menu-content">
+          <div class="create-menu-header">
+            <span class="create-menu-title">创建</span>
+            <t-button variant="text" shape="square" @click="closeCreateMenu">
+              <t-icon name="close" />
+            </t-button>
+          </div>
+          <div class="create-menu-items">
+            <div class="create-menu-item" @click="handleCreateItemClick(handleCreateDocument)">
+              <div class="create-menu-item-icon" style="background: rgba(0, 82, 217, 0.1);">
+                <t-icon name="add" style="color: #0052D9; font-size: 24px;" />
               </div>
-              <div class="wiki-meta">
-                <t-icon name="time" size="14px" />
-                <span>{{ formatTime(wiki.updatedAt) }}</span>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">新建文档</div>
+                <div class="create-menu-item-desc">创建新文档</div>
+              </div>
+            </div>
+            <div class="create-menu-item" @click="handleCreateItemClick(handleTemplates)">
+              <div class="create-menu-item-icon" style="background: rgba(0, 168, 112, 0.1);">
+                <t-icon name="folder-open" style="color: #00A870; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">模版库</div>
+                <div class="create-menu-item-desc">使用文档模版</div>
+              </div>
+            </div>
+            <div class="create-menu-item" @click="handleCreateItemClick(handleCreateWiki)">
+              <div class="create-menu-item-icon" style="background: rgba(250, 173, 20, 0.1);">
+                <t-icon name="book" style="color: #FAAD14; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">新建知识库</div>
+                <div class="create-menu-item-desc">创建新知识库</div>
               </div>
             </div>
           </div>
         </div>
       </div>
+    </transition>
 
-      <!-- 空状态 -->
-      <div v-if="filteredWikis.length === 0" class="empty-state">
-        <t-icon name="folder-open" size="64px" />
-        <p class="empty-text">{{ searchKeyword ? '没有找到相关知识库' : '还没有创建任何知识库' }}</p>
-        <t-button v-if="!searchKeyword" theme="primary" @click="handleCreateWiki">
-          <t-icon name="add" />
-          创建第一个知识库
-        </t-button>
-      </div>
-    </div>
+    <!-- 移动端底部Tab栏 -->
+    <BottomTabBar v-if="isMobile" />
   </div>
 </template>
 
@@ -259,6 +400,12 @@ const handleTemplates = () => {
   flex: 1;
   overflow-y: auto;
   padding: 32px;
+}
+
+/* 移动端主内容区域 */
+.main-content.mobile-content {
+  padding: 16px;
+  padding-bottom: calc(56px + 16px); /* 为底部Tab栏留出空间 */
 }
 
 /* 页面头部 */
@@ -812,10 +959,335 @@ const handleTemplates = () => {
   margin: 0 0 24px 0;
 }
 
+/* ===== 移动端样式 ===== */
+/* 移动端统计信息 */
+.mobile-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%);
+  border-radius: 12px;
+  border: 1px solid #e7e7e7;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #0052D9;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 32px;
+  background: #e7e7e7;
+}
+
+/* 移动端Tab导航 */
+.mobile-tabs {
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+}
+
+/* 移动端网格 */
+.mobile-grid {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+/* 移动端卡片 */
+.mobile-card {
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #f0f0f0;
+}
+
+.mobile-card:active {
+  transform: scale(0.98);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.wiki-card-inner {
+  border-radius: 12px;
+}
+
+/* 移动端卡片头部 */
+.wiki-card-header-mobile {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  padding-bottom: 12px;
+}
+
+.wiki-icon-mobile {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: white;
+  font-size: 24px;
+}
+
+.wiki-header-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.wiki-title-mobile {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f1f1f;
+  margin: 0 0 6px 0;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+.wiki-description-mobile {
+  font-size: 13px;
+  color: #8a8a8a;
+  line-height: 1.5;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.wiki-more-btn {
+  flex-shrink: 0;
+}
+
+/* 移动端卡片底部 */
+.wiki-card-footer-mobile {
+  padding: 12px 16px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wiki-tags-mobile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wiki-meta-mobile {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.wiki-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
+.wiki-meta-item :deep(.t-icon) {
+  font-size: 14px;
+  color: #8a8a8a;
+}
+
+/* 移动端空状态 */
+.mobile-empty {
+  padding: 60px 20px;
+}
+
+.mobile-empty .empty-text {
+  font-size: 14px;
+}
+
+/* 移动端浮动按钮 */
+.mobile-fab {
+  position: fixed;
+  right: 20px;
+  bottom: calc(56px + 20px); /* 底部Tab栏上方 */
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0052D9 0%, #1677FF 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 82, 217, 0.4);
+  cursor: pointer;
+  z-index: 99;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mobile-fab:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 8px rgba(0, 82, 217, 0.3);
+}
+
+.mobile-fab :deep(.t-icon) {
+  font-size: 24px;
+}
+
+/* 移动端创建菜单 */
+.mobile-create-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  animation: fade-in 0.3s ease;
+}
+
+.create-menu-content {
+  width: 100%;
+  background: white;
+  border-radius: 20px 20px 0 0;
+  padding: 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  max-height: 70vh;
+  overflow-y: auto;
+  animation: slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.create-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.create-menu-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f1f1f;
+}
+
+.create-menu-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.create-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #fafafa;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.create-menu-item:active {
+  background: #f0f0f0;
+  transform: scale(0.98);
+}
+
+.create-menu-item-icon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+}
+
+.create-menu-item-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.create-menu-item-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #1f1f1f;
+}
+
+.create-menu-item-desc {
+  font-size: 13px;
+  color: #8a8a8a;
+}
+
+/* 动画 */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-up-enter-from {
+  transform: translateY(100%);
+}
+
+.slide-up-leave-to {
+  transform: translateY(100%);
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
   .main-content {
     padding: 16px;
+    padding-bottom: calc(56px + 16px);
   }
 
   .page-header {
@@ -825,11 +1297,48 @@ const handleTemplates = () => {
 
   .wiki-grid {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 12px;
   }
 
   .top-bar {
     padding: 12px 16px;
+  }
+
+  /* 确保Logo在知识库页面正确显示 */
+  .top-bar :deep(.mobile-logo-container) {
+    display: inline-flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  .top-bar :deep(.mobile-logo-container .sophia-logo) {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  .top-bar :deep(.mobile-logo-container .logo-svg) {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  /* 隐藏桌面端功能卡片 */
+  .feature-cards {
+    display: none;
+  }
+}
+
+/* 安全区域适配 */
+@supports (padding: env(safe-area-inset-bottom)) {
+  @media (max-width: 768px) {
+    .mobile-fab {
+      bottom: calc(56px + 20px + env(safe-area-inset-bottom));
+    }
+
+    .main-content.mobile-content {
+      padding-bottom: calc(56px + 16px + env(safe-area-inset-bottom));
+    }
   }
 }
 </style>
