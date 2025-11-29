@@ -63,7 +63,7 @@ const handleSynced = (synced: boolean) => {
 
 // 返回首页
 const goBack = () => {
-  router.push('/')
+  router.push('/home')
 }
 
 // 复制文档链接

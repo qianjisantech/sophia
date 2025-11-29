@@ -5,6 +5,18 @@ import { useDocumentStore } from '../stores/document'
 import { MessagePlugin } from 'tdesign-vue-next'
 import MindmapEditor from '../components/MindmapEditor.vue'
 
+const props = defineProps<{
+  sidebarVisible?: boolean
+}>()
+
+const emit = defineEmits<{
+  'toggle-sidebar': []
+}>()
+
+const toggleSidebar = () => {
+  emit('toggle-sidebar')
+}
+
 const route = useRoute()
 const router = useRouter()
 const documentStore = useDocumentStore()
@@ -30,7 +42,7 @@ onMounted(async () => {
     documentStore.setCurrentDocument(docId.value)
   } else {
     MessagePlugin.error('文档不存在')
-    router.push('/')
+    router.push('/home')
   }
 })
 
@@ -64,7 +76,7 @@ const saveDocument = async () => {
 
 // 返回列表
 const goBack = () => {
-  router.push('/')
+  router.push('/home')
 }
 
 // 格式化保存时间
@@ -101,6 +113,14 @@ const exportImage = () => {
     <!-- 顶部导航栏 -->
     <div class="top-nav">
       <div class="nav-left">
+        <t-button
+          variant="text"
+          shape="square"
+          class="menu-toggle-btn"
+          @click="toggleSidebar"
+        >
+          <t-icon :name="props.sidebarVisible ? 'menu-fold' : 'menu-unfold'" />
+        </t-button>
         <t-button variant="text" @click="goBack" class="home-btn">
           <template #icon><t-icon name="home" /></template>
         </t-button>
@@ -180,10 +200,26 @@ const exportImage = () => {
 
 <style scoped>
 .mindmap-view-page {
-  height: 100vh;
+  height: 100%;
   display: flex;
-  flex-direction: column;
   background: #fff;
+}
+
+.menu-toggle-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  border-radius: 8px !important;
+  color: var(--text-primary) !important;
+  transition: all 0.2s ease;
+}
+
+.menu-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+.menu-toggle-btn :deep(.t-icon) {
+  font-size: 20px;
 }
 
 .top-nav {

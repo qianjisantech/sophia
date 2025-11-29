@@ -38,7 +38,7 @@ const handleLogin = async () => {
       MessagePlugin.success('登录成功')
 
       // 跳转到首页
-      router.push('/')
+      router.push('/home')
     } else {
       MessagePlugin.error('用户名或密码错误')
     }

@@ -6,8 +6,8 @@ export interface Document {
   id: string
   title: string
   content: string
-  createdAt: string
-  updatedAt: string
+  createdAt: string | number
+  updatedAt: string | number
   folder?: string
   folderId?: string // 所属文件夹ID
   parentId?: string // 父文件夹ID（用于层级结构）
@@ -51,7 +51,9 @@ export const useDocumentStore = defineStore('document', () => {
   // 获取我的文档文件夹
   const myFolders = computed(() => {
     const currentUser = localStorage.getItem('username') || 'demo'
-    return folders.value.filter(folder => !folder.isShared && folder.creator === currentUser)
+    return folders.value.filter(folder =>
+      !folder.isShared && (folder.creator === currentUser || !folder.creator)
+    )
   })
 
   // 获取共享文档文件夹

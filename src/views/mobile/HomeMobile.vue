@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDocumentStore } from '../stores/document'
-import { useMenuStore } from '../stores/menu'
+import { useDocumentStore } from '../../stores/document'
+import { useMenuStore } from '../../stores/menu'
 import { MessagePlugin, Icon } from 'tdesign-vue-next'
-import Sidebar from '../components/Sidebar.vue'
-import BottomTabBar from '../components/BottomTabBar.vue'
-import { useDevice } from '../composables/useDevice'
+import BottomTabBar from '../../components/BottomTabBar.vue'
+import PullToRefresh from '../../components/PullToRefresh.vue'
+import { useDevice } from '../../composables/useDevice'
 
 
 const router = useRouter()
@@ -40,6 +40,17 @@ const handleAboutClick = () => {
   MessagePlugin.info('关于我们功能开发中...')
 }
 
+// 刷新页面
+const handleRefresh = async () => {
+  await documentStore.loadDocuments()
+  MessagePlugin.success('刷新成功')
+}
+
+// 跳转到搜索页面
+const goToSearch = () => {
+  router.push('/search')
+}
+
 // 加载文档列表
 onMounted(async () => {
   await documentStore.loadDocuments()
@@ -52,13 +63,7 @@ const newDocTitle = ref('')
 const newDocFolder = ref('默认文件夹')
 
 // 主页子标签控制
-const activeSubTab = ref('my-docs')
-
-// 移动端侧边栏控制
-const sidebarVisible = ref(false)
-const toggleSidebar = () => {
-  sidebarVisible.value = !sidebarVisible.value
-}
+const activeSubTab = ref('recent')
 
 // 移动端新建菜单控制
 const showCreateMenu = ref(false)
@@ -100,19 +105,19 @@ const currentMenuInfo = computed(() => {
       emptyText: '暂无收藏文档'
     },
     'my-docs': {
-      title: '最近访问',
-      description: '这里显示你最近访问的所有文档',
+      title: '我的文档',
+      description: '这里显示你创建的所有文档',
       emptyText: '暂无文档'
     },
     'shared': {
-      title: '与我共享',
+      title: '共享文档',
       description: '这里显示其他人与你共享的文档',
       emptyText: '暂无共享文档'
     },
     'trash': {
-      title: '收藏',
-      description: '这里显示你收藏的所有文档',
-      emptyText: '还没有收藏任何文档'
+      title: '回收站',
+      description: '这里显示已删除的文档，30天后将永久删除',
+      emptyText: '回收站是空的'
     },
     'my': {
       title: '我的',
@@ -132,16 +137,24 @@ const filteredDocuments = computed(() => {
     case 'home':
       // 主页 - 根据子标签过滤
       switch (activeSubTab.value) {
+        case 'recent':
+          // 最近 - 显示所有文档，按更新时间排序
+          docs = [...documentStore.documents].sort((a, b) => {
+            const timeA = a.updatedAt || a.createdAt || 0
+            const timeB = b.updatedAt || b.createdAt || 0
+            return timeB - timeA
+          })
+          break
         case 'my-docs':
-          // 最近访问 - 显示当前用户创建的文档
+          // 我的文档 - 显示当前用户创建的文档
           docs = docs.filter(doc => doc.creator === username.value || !doc.creator)
           break
         case 'shared':
-          // 与我共享 - 这里需要后端支持共享字段
+          // 共享空间 - 这里需要后端支持共享字段
           docs = docs.filter(doc => (doc as any).isShared)
           break
         case 'trash':
-          // 收藏 - 这里需要后端支持删除标记
+          // 回收站 - 这里需要后端支持删除标记
           docs = docs.filter(doc => (doc as any).isDeleted)
           break
         default:
@@ -153,11 +166,11 @@ const filteredDocuments = computed(() => {
       docs = docs.filter(doc => (doc as any).isFavorite)
       break
     case 'my-docs':
-      // 最近访问 - 显示当前用户创建的文档
+      // 我的文档 - 显示当前用户创建的文档
       docs = docs.filter(doc => doc.creator === username.value || !doc.creator)
       break
     case 'shared':
-      // 与我共享 - 这里需要后端支持共享字段
+      // 共享文档 - 这里需要后端支持共享字段
       docs = docs.filter(doc => (doc as any).isShared)
       break
     case 'my':
@@ -228,6 +241,41 @@ const deleteDocument = async (id: string, title: string) => {
     } else {
       MessagePlugin.error(documentStore.error)
     }
+  }
+}
+
+// 处理文档操作
+const handleDocAction = (action: string, doc: any) => {
+  switch (action) {
+    case 'open':
+      openDocument(doc.id)
+      break
+    case 'rename':
+      const newTitle = prompt('请输入新的文档名称', doc.title)
+      if (newTitle && newTitle.trim() && newTitle !== doc.title) {
+        // TODO: 调用重命名API
+        MessagePlugin.success('重命名成功')
+      }
+      break
+    case 'copy':
+      // TODO: 调用复制API
+      MessagePlugin.info('复制功能开发中...')
+      break
+    case 'move':
+      // TODO: 调用移动API
+      MessagePlugin.info('移动功能开发中...')
+      break
+    case 'favorite':
+      // TODO: 调用收藏/取消收藏API
+      if ((doc as any).isFavorite) {
+        MessagePlugin.success('已取消收藏')
+      } else {
+        MessagePlugin.success('已添加到收藏')
+      }
+      break
+    case 'delete':
+      deleteDocument(doc.id, doc.title)
+      break
   }
 }
 
@@ -397,25 +445,22 @@ const columns: any[] = [
 
 <template>
   <div class="document-list-page" :class="[`device-${deviceType}`]">
-    <Sidebar v-model:visible="sidebarVisible" v-if="!isMobile" />
-
-    <Sidebar v-model:visible="sidebarVisible" v-if="isMobile" />
-
-    <div class="main-content">
+    <PullToRefresh :onRefresh="handleRefresh" :disabled="!isMobile">
+      <div class="main-content">
       <!-- 顶部栏 -->
       <div class="top-bar">
-        <div class="top-bar-left">
-          <!-- 移动端汉堡菜单按钮 -->
-          <t-button
-            v-if="isMobile"
-            variant="text"
-            shape="square"
-            class="mobile-menu-btn"
-            @click="toggleSidebar"
-          >
-            <t-icon name="menu-fold" />
+        <!-- H5模式：左侧Logo + 右侧搜索图标 -->
+        <div v-if="isMobile" class="mobile-top-bar">
+          <div class="mobile-logo">
+            <div class="logo-icon">S</div>
+          </div>
+          <t-button variant="text" shape="square" class="mobile-search-btn" @click="goToSearch">
+            <t-icon name="search" />
           </t-button>
+        </div>
 
+        <!-- 桌面模式：原有搜索栏 -->
+        <div v-else class="top-bar-left">
           <div class="search-bar">
             <t-input
               v-model="searchKeyword"
@@ -478,12 +523,12 @@ const columns: any[] = [
           </div>
         </div>
 
-        <div class="top-bar-right">
-          <t-button variant="text" shape="square" class="icon-button">
+        <div v-if="!isMobile" class="top-bar-right">
+          <t-button variant="text" shape="square" class="icon-button" v-if="!isMobile">
             <t-icon name="notification" />
           </t-button>
 
-          <t-button variant="text" shape="square" class="icon-button">
+          <t-button variant="text" shape="square" class="icon-button" v-if="!isMobile">
             <t-icon name="help-circle" />
           </t-button>
 
@@ -558,16 +603,6 @@ const columns: any[] = [
             <div class="title-section">
               <h2 class="page-title">{{ currentMenuInfo.title }}</h2>
             </div>
-            <div class="header-actions" v-if="currentMenu !== 'my'">
-              <t-button variant="text" size="small" class="action-link">
-                <template #icon><t-icon name="refresh" /></template>
-                刷新
-              </t-button>
-              <t-button variant="text" size="small" class="action-link">
-                <template #icon><t-icon name="setting" /></template>
-                设置
-              </t-button>
-            </div>
           </div>
         </div>
 
@@ -576,37 +611,28 @@ const columns: any[] = [
           <!-- 主页子标签 -->
           <div v-if="currentMenu === 'home'" class="sub-tabs">
             <div
+              :class="['sub-tab-item', { active: activeSubTab === 'recent' }]"
+              @click="activeSubTab = 'recent'"
+            >
+              最近
+            </div>
+            <div
               :class="['sub-tab-item', { active: activeSubTab === 'my-docs' }]"
               @click="activeSubTab = 'my-docs'"
             >
-              最近访问
+              我的文档
             </div>
             <div
               :class="['sub-tab-item', { active: activeSubTab === 'shared' }]"
               @click="activeSubTab = 'shared'"
             >
-              与我共享
+              共享空间
             </div>
             <div
               :class="['sub-tab-item', { active: activeSubTab === 'trash' }]"
               @click="activeSubTab = 'trash'"
             >
-              收藏
-            </div>
-          </div>
-
-          <div class="section-toolbar" v-if="currentMenu !== 'home'">
-            <div class="toolbar-left">
-              <t-button variant="text" size="small" class="filter-btn">
-                <template #icon><t-icon name="filter" /></template>
-                筛选
-              </t-button>
-              <t-button variant="text" size="small" class="filter-btn">
-                <template #icon><t-icon name="sort-descending" /></template>
-                排序
-              </t-button>
-            </div>
-            <div class="toolbar-right">
+              回收站
             </div>
           </div>
 
@@ -684,39 +710,42 @@ const columns: any[] = [
             </t-table>
             </div>
 
-            <!-- 移动端：卡片列表视图 -->
+            <!-- 移动端：列表视图 -->
             <div v-if="currentMenu !== 'my'" class="mobile-list-view">
               <div
                 v-for="doc in filteredDocuments"
                 :key="doc.id"
                 class="mobile-doc-item"
-                @click="openDocument(doc.id)"
+                @dblclick="openDocument(doc.id)"
               >
                 <div class="mobile-doc-icon">
                   <t-icon
                     :name="getFileIcon(doc.type || 'document').icon"
-                    :style="{ fontSize: '32px', color: getFileIcon(doc.type || 'document').color }"
+                    :style="{ fontSize: '40px', color: getFileIcon(doc.type || 'document').color }"
                   />
                 </div>
                 <div class="mobile-doc-info">
                   <h4 class="mobile-doc-title">{{ doc.title }}</h4>
                   <div class="mobile-doc-meta">
+                    <span class="mobile-doc-updater">{{ doc.updater || doc.creator || '未知' }}</span>
+                    <span class="mobile-doc-separator">·</span>
                     <span class="mobile-doc-time">{{ formatTime(doc.updatedAt) }}</span>
                   </div>
                 </div>
                 <div class="mobile-doc-action">
                   <t-dropdown
                     :options="[
-                      { content: '打开', value: 'open' },
-                      { content: '删除', value: 'delete', theme: 'error' }
+                      { content: '打开', value: 'open', prefixIcon: () => h(Icon, { name: 'file-icon' }) },
+                      { content: '重命名', value: 'rename', prefixIcon: () => h(Icon, { name: 'edit' }) },
+                      { content: '复制', value: 'copy', prefixIcon: () => h(Icon, { name: 'file-copy' }) },
+                      { content: '移动', value: 'move', prefixIcon: () => h(Icon, { name: 'folder' }) },
+                      { content: '收藏', value: 'favorite', prefixIcon: () => h(Icon, { name: 'star' }) },
+                      { content: '删除', value: 'delete', theme: 'error', prefixIcon: () => h(Icon, { name: 'delete' }) }
                     ]"
-                    @click.stop="(data: any) => {
-                      if (data.value === 'open') openDocument(doc.id)
-                      if (data.value === 'delete') deleteDocument(doc.id, doc.title)
-                    }"
+                    @click.stop="(data: any) => handleDocAction(data.value, doc)"
                   >
                     <span class="mobile-action-icon" @click.stop>
-                      <t-icon name="ellipsis" />
+                      <t-icon name="more" />
                     </span>
                   </t-dropdown>
                 </div>
@@ -746,82 +775,66 @@ const columns: any[] = [
         </t-form>
       </t-dialog>
     </div>
+    </PullToRefresh>
 
-    <!-- 移动端FAB新建按钮 -->
-    <div v-if="isMobile" class="fab-create-btn" @click="toggleCreateMenu">
-      <t-icon name="add" class="fab-icon" />
-    </div>
+    <!-- 移动端浮动新建按钮和菜单 -->
+    <div v-if="isMobile" class="mobile-fab-container">
+      <transition name="fade">
+        <div v-if="showCreateMenu" class="create-menu-overlay" @click="closeCreateMenu"></div>
+      </transition>
 
-    <!-- 移动端新建菜单遮罩 -->
-    <div v-if="isMobile && showCreateMenu" class="create-menu-overlay" @click="closeCreateMenu"></div>
+      <transition name="slide-up">
+        <div v-if="showCreateMenu" class="create-menu-panel">
+          <div class="create-menu-header">
+            <span class="create-menu-title">新建</span>
+            <t-button variant="text" size="small" shape="square" @click="closeCreateMenu">
+              <t-icon name="close" />
+            </t-button>
+          </div>
 
-    <!-- 移动端新建菜单 -->
-    <div v-if="isMobile" :class="['create-menu-panel', { 'show': showCreateMenu }]">
-      <div class="create-menu-header">
-        <h3>新建</h3>
-        <t-button variant="text" shape="square" @click="closeCreateMenu">
-          <t-icon name="close" />
-        </t-button>
-      </div>
-      <div class="create-menu-content">
-        <div class="create-menu-item" @click="handleCreateMenuClick('document')">
-          <div class="create-menu-item-icon" style="background: rgba(0, 82, 217, 0.1);">
-            <t-icon name="file-copy" style="color: #0052D9; font-size: 16px;" />
-          </div>
-          <div class="create-menu-item-text">
-            <div class="create-menu-item-title">文档</div>
-          </div>
-        </div>
-        <div class="create-menu-item" @click="handleCreateMenuClick('spreadsheet')">
-          <div class="create-menu-item-icon" style="background: rgba(82, 196, 26, 0.1);">
-            <t-icon name="table" style="color: #52C41A; font-size: 16px;" />
-          </div>
-          <div class="create-menu-item-text">
-            <div class="create-menu-item-title">表格</div>
-          </div>
-        </div>
-        <div class="create-menu-item" @click="handleCreateMenuClick('mindmap')">
-          <div class="create-menu-item-icon" style="background: rgba(139, 92, 246, 0.1);">
-            <t-icon name="root-list" style="color: #8B5CF6; font-size: 16px;" />
-          </div>
-          <div class="create-menu-item-text">
-            <div class="create-menu-item-title">思维导图</div>
-          </div>
-        </div>
-        <div class="create-menu-item" @click="handleCreateMenuClick('slide')">
-          <div class="create-menu-item-icon" style="background: rgba(210, 71, 38, 0.1);">
-            <t-icon name="play-circle" style="color: #D24726; font-size: 16px;" />
-          </div>
-          <div class="create-menu-item-text">
-            <div class="create-menu-item-title">幻灯片</div>
+          <div class="create-menu-grid">
+            <div class="create-menu-item" @click="handleCreateMenuClick('document')">
+              <div class="create-menu-item-icon" style="background: rgba(91, 143, 249, 0.1);">
+                <t-icon name="file-copy" style="color: #5B8FF9; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">文档</div>
+              </div>
+            </div>
+
+            <div class="create-menu-item" @click="handleCreateMenuClick('spreadsheet')">
+              <div class="create-menu-item-icon" style="background: rgba(29, 127, 62, 0.1);">
+                <t-icon name="table" style="color: #1D7F3E; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">表格</div>
+              </div>
+            </div>
+
+            <div class="create-menu-item" @click="handleCreateMenuClick('mindmap')">
+              <div class="create-menu-item-icon" style="background: rgba(139, 92, 246, 0.1);">
+                <t-icon name="root-list" style="color: #8B5CF6; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">思维导图</div>
+              </div>
+            </div>
+
+            <div class="create-menu-item" @click="handleCreateMenuClick('folder')">
+              <div class="create-menu-item-icon" style="background: rgba(250, 173, 20, 0.1);">
+                <t-icon name="folder" style="color: #FAAD14; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">文件夹</div>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="create-menu-item" @click="handleCreateMenuClick('flowchart')">
-          <div class="create-menu-item-icon" style="background: rgba(0, 168, 112, 0.1);">
-            <t-icon name="chart-bubble" style="color: #00A870; font-size: 16px;" />
-          </div>
-          <div class="create-menu-item-text">
-            <div class="create-menu-item-title">流程图</div>
-          </div>
-        </div>
-        <div class="create-menu-item" @click="handleCreateMenuClick('whiteboard')">
-          <div class="create-menu-item-icon" style="background: rgba(0, 82, 217, 0.1);">
-            <t-icon name="edit" style="color: #0052D9; font-size: 16px;" />
-          </div>
-          <div class="create-menu-item-text">
-            <div class="create-menu-item-title">白板</div>
-          </div>
-        </div>
-        <div class="create-menu-divider"></div>
-        <div class="create-menu-item" @click="handleCreateMenuClick('folder')">
-          <div class="create-menu-item-icon" style="background: rgba(250, 173, 20, 0.1);">
-            <t-icon name="folder" style="color: #FAAD14; font-size: 16px;" />
-          </div>
-          <div class="create-menu-item-text">
-            <div class="create-menu-item-title">文件夹</div>
-          </div>
-        </div>
-      </div>
+      </transition>
+
+      <button class="mobile-fab-button" @click="toggleCreateMenu">
+        <t-icon :name="showCreateMenu ? 'close' : 'add'" />
+      </button>
     </div>
 
     <!-- 移动端底部Tab栏 -->
@@ -876,6 +889,60 @@ const columns: any[] = [
   -webkit-backdrop-filter: var(--backdrop-blur);
   flex-shrink: 0;
   height: 56px;
+}
+
+/* H5模式顶部栏 */
+.mobile-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0 4px;
+}
+
+.mobile-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0052D9 0%, #1677FF 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 22px;
+  font-weight: 700;
+  font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+  letter-spacing: -0.5px;
+  box-shadow: 0 2px 8px rgba(0, 82, 217, 0.2);
+}
+
+.logo-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.mobile-search-btn {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 8px !important;
+  color: var(--text-primary) !important;
+  transition: all 0.2s ease !important;
+}
+
+.mobile-search-btn:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+.mobile-search-btn :deep(.t-icon) {
+  font-size: 22px;
 }
 
 .top-bar-left {
@@ -1431,7 +1498,7 @@ const columns: any[] = [
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   min-height: 0;
   background: white;
 }
@@ -1463,11 +1530,9 @@ const columns: any[] = [
 .device-mobile .mobile-list-view {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 16px 16px;
   flex: 1;
   overflow-y: auto;
-  background: var(--bg-gray-2);
+  background: white;
 }
 
 .device-desktop .mobile-list-view {
@@ -1825,36 +1890,41 @@ const columns: any[] = [
   transform: scale(0.98);
 }
 
-/* FAB按钮 */
-.fab-create-btn {
+/* 移动端FAB容器 */
+.mobile-fab-container {
   position: fixed;
   bottom: 72px;
-  right: 20px;
+  right: 16px;
+  z-index: 102;
+}
+
+/* 桌面端隐藏FAB容器 */
+.device-desktop .mobile-fab-container {
+  display: none !important;
+}
+
+/* 移动端FAB按钮 */
+.mobile-fab-button {
   width: 56px;
   height: 56px;
   border-radius: 50%;
   background: linear-gradient(135deg, #0052D9 0%, #1677FF 100%);
   box-shadow: 0 4px 12px rgba(0, 82, 217, 0.4);
+  border: none;
   cursor: pointer;
-  z-index: 102;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   justify-content: center;
+  color: white;
 }
 
-/* 桌面端隐藏FAB */
-.device-desktop .fab-create-btn {
-  display: none !important;
-}
-
-.fab-create-btn:active {
+.mobile-fab-button:active {
   transform: scale(0.9);
 }
 
-.fab-icon {
+.mobile-fab-button .t-icon {
   font-size: 28px;
-  color: white;
 }
 
 /* 移动端新建菜单遮罩 */
@@ -1866,16 +1936,26 @@ const columns: any[] = [
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
   z-index: 199;
-  animation: fadeIn 0.3s ease;
 }
 
 .device-desktop .create-menu-overlay {
   display: none !important;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+/* 遮罩层淡入淡出动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.fade-enter-to,
+.fade-leave-from {
+  opacity: 1;
 }
 
 /* 移动端新建菜单面板 */
@@ -1888,8 +1968,6 @@ const columns: any[] = [
   border-radius: 16px 16px 0 0;
   z-index: 200;
   max-height: 35vh;
-  transform: translateY(100%);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
 }
 
@@ -1897,7 +1975,19 @@ const columns: any[] = [
   display: none !important;
 }
 
-.create-menu-panel.show {
+/* 面板从底部滑入动画 */
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  transform: translateY(100%);
+}
+
+.slide-up-enter-to,
+.slide-up-leave-from {
   transform: translateY(0);
 }
 
@@ -1909,21 +1999,21 @@ const columns: any[] = [
   border-bottom: 1px solid var(--border-color-2);
 }
 
-.create-menu-header h3 {
+.create-menu-title {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
 }
 
-.create-menu-content {
-  padding: 8px 6px;
-  max-height: calc(35vh - 50px);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+.create-menu-grid {
+  padding: 16px;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: 12px;
+  max-height: calc(35vh - 60px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .create-menu-item {
@@ -2129,7 +2219,7 @@ const columns: any[] = [
 
   /* 页面标题 */
   .page-header {
-    padding: 12px 16px 8px;
+    display: none;
   }
 
   .page-title {
@@ -2170,21 +2260,25 @@ const columns: any[] = [
   /* 表格视图 - 移动端优化 */
 
   /* 移动端文档卡片 */
+  .mobile-list-view {
+    padding: 0;
+  }
+
   .mobile-doc-item {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px;
+    padding: 14px 16px;
     background: white;
-    border-radius: var(--radius-small);
-    transition: all var(--transition-fast);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    transition: background var(--transition-fast);
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    position: relative;
+    user-select: none;
   }
 
-  .mobile-doc-item:active {
-    transform: scale(0.98);
-    background: var(--bg-gray-1);
+  .mobile-doc-item:hover {
+    background: rgba(0, 0, 0, 0.02);
   }
 
   .mobile-doc-icon {
@@ -2192,8 +2286,8 @@ const columns: any[] = [
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
+    width: 40px;
+    height: 40px;
   }
 
   .mobile-doc-info {
@@ -2201,25 +2295,40 @@ const columns: any[] = [
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
   }
 
   .mobile-doc-title {
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2329;
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.4;
   }
 
   .mobile-doc-meta {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--text-tertiary);
+    gap: 6px;
+    font-size: 13px;
+    color: #8f959e;
+    line-height: 1.4;
+  }
+
+  .mobile-doc-updater {
+    flex-shrink: 0;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-doc-separator {
+    flex-shrink: 0;
+    opacity: 0.6;
   }
 
   .mobile-doc-time {
@@ -2231,24 +2340,29 @@ const columns: any[] = [
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    margin: -8px -4px -8px 0;
+    width: 32px;
+    height: 32px;
+    opacity: 0.7;
+    transition: opacity var(--transition-fast);
+  }
+
+  .mobile-doc-item:hover .mobile-doc-action {
+    opacity: 1;
   }
 
   .mobile-action-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
     transition: all var(--transition-fast);
-    color: var(--text-secondary);
+    color: #646a73;
   }
 
   .mobile-action-icon:active {
-    background: rgba(0, 0, 0, 0.06);
+    background: rgba(0, 0, 0, 0.08);
   }
 
   /* 空状态 */
@@ -2324,30 +2438,29 @@ const columns: any[] = [
 
   /* 移动端列表进一步压缩 */
   .mobile-list-view {
-    padding: 10px 12px 12px;
-    gap: 6px;
+    padding: 0;
   }
 
   .mobile-doc-item {
-    padding: 10px;
+    padding: 12px 12px;
     gap: 10px;
   }
 
   .mobile-doc-icon {
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
   }
 
   .mobile-doc-icon :deep(.t-icon) {
-    font-size: 28px !important;
+    font-size: 32px !important;
   }
 
   .mobile-doc-title {
-    font-size: 14px;
+    font-size: 15px;
   }
 
   .mobile-doc-meta {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .mobile-doc-action {

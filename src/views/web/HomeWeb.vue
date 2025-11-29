@@ -1,13 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDocumentStore } from '../stores/document'
-import { useMenuStore } from '../stores/menu'
+import { useDocumentStore } from '../../stores/document'
+import { useMenuStore } from '../../stores/menu'
 import { MessagePlugin, Icon } from 'tdesign-vue-next'
-import Sidebar from '../components/Sidebar.vue'
-import BottomTabBar from '../components/BottomTabBar.vue'
-import { useDevice } from '../composables/useDevice'
+import BottomTabBar from '../../components/BottomTabBar.vue'
+import TopBar from '../../components/TopBar.vue'
+import { useDevice } from '../../composables/useDevice'
 
+const props = defineProps<{
+  sidebarVisible?: boolean
+}>()
+
+const emit = defineEmits<{
+  'toggle-sidebar': []
+}>()
+
+const toggleSidebar = () => {
+  emit('toggle-sidebar')
+}
 
 const router = useRouter()
 const documentStore = useDocumentStore()
@@ -54,12 +65,6 @@ const newDocFolder = ref('默认文件夹')
 // 主页子标签控制
 const activeSubTab = ref('my-docs')
 
-// 移动端侧边栏控制
-const sidebarVisible = ref(false)
-const toggleSidebar = () => {
-  sidebarVisible.value = !sidebarVisible.value
-}
-
 // 移动端新建菜单控制
 const showCreateMenu = ref(false)
 const toggleCreateMenu = () => {
@@ -70,20 +75,14 @@ const closeCreateMenu = () => {
   showCreateMenu.value = false
 }
 
-// 搜索面板控制
-const handleSearchFocus = () => {
-  showSearchPanel.value = true
+// 搜索更新处理
+const handleSearchUpdate = (value: string) => {
+  searchKeyword.value = value
 }
 
-const handleSearchBlur = () => {
-  // 延迟关闭，允许点击面板内容
-  setTimeout(() => {
-    showSearchPanel.value = false
-  }, 200)
-}
-
-const closeSearchPanel = () => {
-  showSearchPanel.value = false
+// 搜索结果点击处理
+const handleSearchResultClick = (doc: any) => {
+  openDocument(doc.id)
 }
 
 // 获取当前菜单的信息
@@ -94,10 +93,15 @@ const currentMenuInfo = computed(() => {
       description: '查看和管理你的所有文档',
       emptyText: '暂无文档'
     },
+    'cloud': {
+      title: '云盘',
+      description: '查看和管理你的云盘文件',
+      emptyText: '云盘为空'
+    },
     'favorites': {
-      title: '我的收藏',
-      description: '这里显示你收藏的所有文档',
-      emptyText: '暂无收藏文档'
+      title: '知识库',
+      description: '这里显示你的知识库文档',
+      emptyText: '暂无知识库文档'
     },
     'my-docs': {
       title: '最近访问',
@@ -109,10 +113,15 @@ const currentMenuInfo = computed(() => {
       description: '这里显示其他人与你共享的文档',
       emptyText: '暂无共享文档'
     },
+    'permission': {
+      title: '权限管理',
+      description: '管理用户权限和访问控制',
+      emptyText: '暂无权限配置'
+    },
     'trash': {
-      title: '收藏',
-      description: '这里显示你收藏的所有文档',
-      emptyText: '还没有收藏任何文档'
+      title: '回收站',
+      description: '这里显示你删除的文档',
+      emptyText: '回收站为空'
     },
     'my': {
       title: '我的',
@@ -141,12 +150,16 @@ const filteredDocuments = computed(() => {
           docs = docs.filter(doc => (doc as any).isShared)
           break
         case 'trash':
-          // 收藏 - 这里需要后端支持删除标记
-          docs = docs.filter(doc => (doc as any).isDeleted)
+          // 收藏 - 这里需要后端支持收藏字段
+          docs = docs.filter(doc => (doc as any).isFavorite)
           break
         default:
           docs = documentStore.documents
       }
+      break
+    case 'cloud':
+      // 云盘 - 显示所有文档
+      docs = documentStore.documents
       break
     case 'favorites':
       // 我的收藏 - 这里需要后端支持收藏字段
@@ -159,6 +172,10 @@ const filteredDocuments = computed(() => {
     case 'shared':
       // 与我共享 - 这里需要后端支持共享字段
       docs = docs.filter(doc => (doc as any).isShared)
+      break
+    case 'permission':
+      // 权限管理 - 不显示文档列表
+      docs = []
       break
     case 'my':
       // 我的 - 不显示文档列表
@@ -179,8 +196,49 @@ const filteredDocuments = computed(() => {
   return docs
 })
 
+// 搜索面板结果 - 在所有文档中搜索
+const searchResults = computed(() => {
+  let docs = documentStore.documents.filter(doc => doc.type !== 'folder')
+
+  if (searchKeyword.value.trim()) {
+    // 有搜索关键词时，在标题、内容、文件夹中搜索
+    const keyword = searchKeyword.value.toLowerCase().trim()
+    docs = docs.filter(doc => {
+      const titleMatch = doc.title.toLowerCase().includes(keyword)
+      const folderMatch = doc.folder?.toLowerCase().includes(keyword)
+      const contentMatch = doc.content?.toLowerCase().includes(keyword)
+      return titleMatch || folderMatch || contentMatch
+    })
+  } else {
+    // 无搜索关键词时，显示最近访问的文档（按更新时间排序）
+    docs = docs
+      .filter(doc => doc.creator === username.value || !doc.creator)
+      .sort((a, b) => {
+        const timeA = typeof a.updatedAt === 'string' ? new Date(a.updatedAt).getTime() : a.updatedAt
+        const timeB = typeof b.updatedAt === 'string' ? new Date(b.updatedAt).getTime() : b.updatedAt
+        return timeB - timeA
+      })
+  }
+
+  return docs
+})
+
 // 创建文档
 const handleCreateDocument = async () => {
+  // 如果从卡片点击进来，直接创建文档
+  if (!showCreateDialog.value) {
+    const doc = await documentStore.createDocument('无标题文档', 'document', '默认文件夹')
+    if (doc) {
+      MessagePlugin.success('文档创建成功')
+      // 跳转到编辑页面
+      router.push(`/document/${doc.id}`)
+    } else {
+      MessagePlugin.error(documentStore.error || '创建文档失败')
+    }
+    return
+  }
+
+  // 如果从对话框创建
   if (!newDocTitle.value.trim()) {
     MessagePlugin.warning('请输入文档标题')
     return
@@ -201,6 +259,16 @@ const handleCreateDocument = async () => {
   } else {
     MessagePlugin.error(documentStore.error || '创建文档失败')
   }
+}
+
+// 上传文件
+const handleUpload = () => {
+  MessagePlugin.info('上传功能开发中...')
+}
+
+// 模版库
+const handleTemplates = () => {
+  MessagePlugin.info('模版库功能开发中...')
 }
 
 // 打开文档或文件夹
@@ -396,183 +464,74 @@ const columns: any[] = [
 </script>
 
 <template>
-  <div class="document-list-page" :class="[`device-${deviceType}`]">
-    <Sidebar v-model:visible="sidebarVisible" v-if="!isMobile" />
-
-    <Sidebar v-model:visible="sidebarVisible" v-if="isMobile" />
-
+  <div class="document-list-page" :class="`device-${deviceType}`">
     <div class="main-content">
       <!-- 顶部栏 -->
-      <div class="top-bar">
-        <div class="top-bar-left">
-          <!-- 移动端汉堡菜单按钮 -->
-          <t-button
-            v-if="isMobile"
-            variant="text"
-            shape="square"
-            class="mobile-menu-btn"
-            @click="toggleSidebar"
-          >
-            <t-icon name="menu-fold" />
-          </t-button>
-
-          <div class="search-bar">
-            <t-input
-              v-model="searchKeyword"
-              placeholder="搜索文档、文件夹..."
-              clearable
-              size="large"
-              @focus="handleSearchFocus"
-              @blur="handleSearchBlur"
-            >
-              <template #prefix-icon>
-                <t-icon name="search" />
-              </template>
-              <template #suffix>
-                <span class="keyboard-hint">⌘K</span>
-              </template>
-            </t-input>
-
-            <!-- 搜索面板弹窗 -->
-            <div v-if="showSearchPanel" class="search-panel" @mousedown.prevent>
-              <div class="search-panel-section">
-                <div class="search-section-title">最近访问</div>
-                <div class="search-results">
-                  <div
-                    v-for="doc in filteredDocuments.slice(0, 5)"
-                    :key="doc.id"
-                    class="search-result-item"
-                    @click="openDocument(doc.id)"
-                  >
-                    <div class="result-icon">
-                      <t-icon :name="getFileIcon(doc.type || 'document').icon" :style="{ color: getFileIcon(doc.type || 'document').color }" />
-                    </div>
-                    <div class="result-content">
-                      <div class="result-title">{{ doc.title }}</div>
-                      <div class="result-meta">
-                        <span>{{ doc.folder }}</span>
-                        <span class="result-dot">·</span>
-                        <span>{{ formatTime(doc.updatedAt) }}</span>
-                      </div>
-                    </div>
-                    <div class="result-action">
-                      <t-icon name="chevron-right" />
-                    </div>
-                  </div>
-
-                  <div v-if="filteredDocuments.length === 0" class="search-empty">
-                    <t-icon name="search" size="32px" />
-                    <p>没有找到相关内容</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="search-panel-footer">
-                <div class="search-tips">
-                  <span><kbd>↑</kbd><kbd>↓</kbd> 导航</span>
-                  <span><kbd>Enter</kbd> 打开</span>
-                  <span><kbd>Esc</kbd> 关闭</span>
-                </div>
-              </div>
+      <TopBar
+        :sidebar-visible="props.sidebarVisible"
+        :page-title="currentMenuInfo.title"
+        search-placeholder="搜索文档、文件夹..."
+        :search-results="searchResults"
+        @toggle-sidebar="toggleSidebar"
+        @search-update="handleSearchUpdate"
+        @result-click="handleSearchResultClick"
+      >
+        <template #search-title>
+          {{ searchKeyword.trim() ? `搜索结果 (${searchResults.length})` : '最近访问' }}
+        </template>
+        <template #search-result-item="{ item }">
+          <div class="result-icon">
+            <t-icon :name="getFileIcon(item.type || 'document').icon" :style="{ color: getFileIcon(item.type || 'document').color }" />
+          </div>
+          <div class="result-content">
+            <div class="result-title">{{ item.title }}</div>
+            <div class="result-meta">
+              <span>{{ item.folder }}</span>
+              <span class="result-dot">·</span>
+              <span>{{ formatTime(item.updatedAt) }}</span>
             </div>
           </div>
-        </div>
-
-        <div class="top-bar-right">
-          <t-button variant="text" shape="square" class="icon-button">
-            <t-icon name="notification" />
-          </t-button>
-
-          <t-button variant="text" shape="square" class="icon-button">
-            <t-icon name="help-circle" />
-          </t-button>
-
-          <div class="divider-vertical"></div>
-
-          <t-button variant="outline" class="import-btn">
-            <template #icon><t-icon name="download" /></template>
-            导入
-          </t-button>
-
-          <!-- 协同编辑演示 - 暂时注释掉 -->
-          <!-- <t-dropdown
-            :options="[
-              { content: '文档协同编辑', value: 'document', prefixIcon: () => h(Icon, { name: 'file-text' }) },
-              { content: '思维导图协同编辑', value: 'mindmap', prefixIcon: () => h(Icon, { name: 'chart-bubble' }) },
-              { content: '表格协同编辑', value: 'spreadsheet', prefixIcon: () => h(Icon, { name: 'table' }) }
-            ]"
-            @click="handleCollaborativeDemoClick"
-            trigger="hover"
-          >
-            <t-button variant="outline" class="collab-demo-btn">
-              <template #icon><t-icon name="usergroup" /></template>
-              协同编辑演示
-              <template #suffix><t-icon name="chevron-down" size="16px" /></template>
-            </t-button>
-          </t-dropdown> -->
-
-          <!-- 新建下拉菜单 - 桌面端 -->
-          <t-dropdown
-            :options="createMenuOptions"
-            @click="handleCreateMenuClick"
-            trigger="hover"
-            class="desktop-create-dropdown"
-          >
-            <t-button theme="primary" class="create-btn desktop-create-btn">
-              <template #icon><t-icon name="add" /></template>
-              新建
-              <template #suffix><t-icon name="chevron-down" size="16px" /></template>
-            </t-button>
-          </t-dropdown>
-
-          <div class="divider-vertical"></div>
-
-          <!-- 用户信息 -->
-          <t-dropdown
-            :options="[
-              { content: '个人中心', value: 'profile', prefixIcon: () => h(Icon, { name: 'user' }) },
-              { content: '个人设置', value: 'settings', prefixIcon: () => h(Icon, { name: 'setting' }) },
-              { content: '退出登录', value: 'logout', theme: 'error', prefixIcon: () => h(Icon, { name: 'logout' }) }
-            ]"
-            @click="(data: any) => {
-              if (data.value === 'logout') handleLogout()
-            }"
-          >
-            <div class="user-info-trigger">
-              <t-avatar size="36px" class="user-avatar">{{ username.charAt(0).toUpperCase() }}</t-avatar>
-              <div class="user-info-text">
-                <span class="username">{{ username }}</span>
-                <span class="user-role">管理员</span>
-              </div>
-              <t-icon name="chevron-down" size="16px" class="dropdown-icon" />
-            </div>
-          </t-dropdown>
-        </div>
-      </div>
+          <div class="result-action">
+            <t-icon name="chevron-right" />
+          </div>
+        </template>
+      </TopBar>
 
       <!-- 内容区域 -->
       <div class="content-area">
-        <!-- 页面标题区域 -->
-        <div class="page-header">
-          <div class="page-title-wrapper">
-            <div class="title-section">
-              <h2 class="page-title">{{ currentMenuInfo.title }}</h2>
-            </div>
-            <div class="header-actions" v-if="currentMenu !== 'my'">
-              <t-button variant="text" size="small" class="action-link">
-                <template #icon><t-icon name="refresh" /></template>
-                刷新
-              </t-button>
-              <t-button variant="text" size="small" class="action-link">
-                <template #icon><t-icon name="setting" /></template>
-                设置
-              </t-button>
-            </div>
-          </div>
-        </div>
-
         <!-- 文档列表区域 -->
         <div class="documents-section">
+          <!-- 主页功能卡片 -->
+          <div v-if="currentMenu === 'home'" class="feature-cards">
+            <div class="feature-card" @click="handleCreateDocument">
+              <div class="feature-card-icon">
+                <t-icon name="add" size="20px" />
+              </div>
+              <div class="feature-card-content">
+                <div class="feature-card-title">新建</div>
+                <div class="feature-card-desc">创建新文档</div>
+              </div>
+            </div>
+            <div class="feature-card" @click="handleUpload">
+              <div class="feature-card-icon">
+                <t-icon name="upload" size="20px" />
+              </div>
+              <div class="feature-card-content">
+                <div class="feature-card-title">上传</div>
+                <div class="feature-card-desc">上传本地文件</div>
+              </div>
+            </div>
+            <div class="feature-card" @click="handleTemplates">
+              <div class="feature-card-icon">
+                <t-icon name="folder-open" size="20px" />
+              </div>
+              <div class="feature-card-content">
+                <div class="feature-card-title">模版库</div>
+                <div class="feature-card-desc">使用文档模版</div>
+              </div>
+            </div>
+          </div>
+
           <!-- 主页子标签 -->
           <div v-if="currentMenu === 'home'" class="sub-tabs">
             <div
@@ -591,11 +550,11 @@ const columns: any[] = [
               :class="['sub-tab-item', { active: activeSubTab === 'trash' }]"
               @click="activeSubTab = 'trash'"
             >
-              收藏
+              回收站
             </div>
           </div>
 
-          <div class="section-toolbar" v-if="currentMenu !== 'home'">
+          <div class="section-toolbar" v-if="currentMenu !== 'home' && currentMenu !== 'cloud' && currentMenu !== 'permission'">
             <div class="toolbar-left">
               <t-button variant="text" size="small" class="filter-btn">
                 <template #icon><t-icon name="filter" /></template>
@@ -654,6 +613,17 @@ const columns: any[] = [
               </div>
             </div>
 
+            <!-- 权限管理页面 -->
+            <div v-else-if="currentMenu === 'permission'" class="permission-page">
+              <div class="permission-container">
+                <div class="permission-empty">
+                  <t-icon name="user-setting" size="64px" style="color: #d9d9d9;" />
+                  <p class="empty-text">权限管理功能开发中...</p>
+                  <p class="empty-desc">此功能将用于管理用户权限和访问控制</p>
+                </div>
+              </div>
+            </div>
+
             <!-- 桌面端：表格视图 -->
             <div v-else class="table-view desktop-table">
               <t-table
@@ -685,7 +655,7 @@ const columns: any[] = [
             </div>
 
             <!-- 移动端：卡片列表视图 -->
-            <div v-if="currentMenu !== 'my'" class="mobile-list-view">
+            <div v-if="currentMenu !== 'my' && currentMenu !== 'permission'" class="mobile-list-view">
               <div
                 v-for="doc in filteredDocuments"
                 :key="doc.id"
@@ -861,7 +831,7 @@ const columns: any[] = [
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   background: var(--bg-white);
 }
 
@@ -871,11 +841,12 @@ const columns: any[] = [
   justify-content: space-between;
   align-items: center;
   padding: 8px 32px;
-  background: var(--glass-bg);
-  backdrop-filter: var(--backdrop-blur);
-  -webkit-backdrop-filter: var(--backdrop-blur);
+  background: #ffffff;
   flex-shrink: 0;
   height: 56px;
+  position: relative;
+  z-index: 100;
+  overflow: visible;
 }
 
 .top-bar-left {
@@ -888,19 +859,20 @@ const columns: any[] = [
 .search-bar {
   flex: 1;
   position: relative;
+  z-index: 10000;
 }
 
 /* Apple 风格搜索框 */
 .search-bar :deep(.t-input) {
   border-radius: var(--radius-medium);
   border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--bg-white);
   transition: all var(--transition-fast);
   height: 36px;
 }
 
 .search-bar :deep(.t-input:hover) {
-  background: rgba(0, 0, 0, 0.06);
+  background: var(--bg-white);
   border-color: rgba(0, 0, 0, 0.12);
 }
 
@@ -929,6 +901,27 @@ const columns: any[] = [
   letter-spacing: 0.5px;
 }
 
+/* 搜索面板遮罩 */
+.search-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  z-index: 9998;
+  animation: overlay-appear 0.2s ease;
+}
+
+@keyframes overlay-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* 搜索面板弹窗样式 - Apple/Vercel 风格 */
 .search-panel {
   position: absolute;
@@ -945,7 +938,7 @@ const columns: any[] = [
               0 12px 24px rgba(0, 0, 0, 0.08),
               0 24px 48px rgba(0, 0, 0, 0.08);
   overflow: hidden;
-  z-index: 1000;
+  z-index: 9999;
   animation: search-panel-appear 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -1154,23 +1147,6 @@ const columns: any[] = [
   opacity: 0.5;
 }
 
-/* Apple 风格导入按钮 */
-.import-btn {
-  border-radius: var(--radius-medium) !important;
-  border: 1px solid rgba(0, 0, 0, 0.1) !important;
-  color: var(--text-primary) !important;
-  font-weight: 500 !important;
-  height: 32px !important;
-  padding: 0 14px !important;
-  transition: all var(--transition-fast) !important;
-  font-size: 13px !important;
-}
-
-.import-btn:hover {
-  background: rgba(0, 0, 0, 0.04) !important;
-  border-color: rgba(0, 0, 0, 0.15) !important;
-}
-
 /* Apple 风格新建按钮 */
 .create-btn {
   background: var(--primary-color) !important;
@@ -1244,7 +1220,7 @@ const columns: any[] = [
 
 .content-area {
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
   background: #FFFFFF;
   min-height: 0;
   display: flex;
@@ -1370,19 +1346,120 @@ const columns: any[] = [
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
-  border: 1px solid transparent;
 }
 
 .sub-tab-item:hover {
-  background: rgba(0, 82, 217, 0.06);
-  color: var(--primary-color);
+  color: #1f1f1f;
 }
 
 .sub-tab-item.active {
-  background: rgba(0, 82, 217, 0.1);
   color: var(--primary-color);
-  border-color: rgba(0, 82, 217, 0.2);
+}
+
+/* 功能卡片 */
+.feature-cards {
+  display: flex;
+  gap: 12px;
+  padding: 16px 32px;
+  background: white;
+  flex-shrink: 0;
+  max-width: 50%;
+}
+
+.feature-card {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%);
+  border: 2px solid var(--border-color-2);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  gap: 12px;
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(0, 82, 217, 0.05) 0%, rgba(0, 82, 217, 0) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--primary-color);
+  box-shadow: 0 8px 24px rgba(0, 82, 217, 0.15);
+}
+
+.feature-card:hover::before {
+  opacity: 1;
+}
+
+.feature-card:active {
+  transform: translateY(-2px);
+}
+
+.feature-card-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--primary-color) 0%, #1677FF 100%);
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.feature-card:hover .feature-card-icon {
+  transform: scale(1.1) rotate(5deg);
+  box-shadow: 0 6px 20px rgba(0, 82, 217, 0.3);
+}
+
+.feature-card-icon :deep(.t-icon) {
+  color: white;
+  font-size: 20px;
+}
+
+.feature-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-card-title {
+  font-size: 14px;
   font-weight: 600;
+  color: var(--text-primary);
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feature-card-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .section-toolbar {
@@ -1725,6 +1802,46 @@ const columns: any[] = [
   gap: 16px;
 }
 
+/* 权限管理页面 */
+.permission-page {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-gray-2);
+  padding: 20px;
+}
+
+.permission-container {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.permission-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  background: white;
+  border-radius: var(--radius-medium);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.permission-empty .empty-text {
+  font-size: 16px;
+  font-weight: 500;
+  color: #1f1f1f;
+  margin: 16px 0 8px 0;
+}
+
+.permission-empty .empty-desc {
+  font-size: 14px;
+  color: #8a8a8a;
+  margin: 0;
+}
+
 /* 用户信息卡片 */
 .profile-card {
   background: white;
@@ -1997,27 +2114,25 @@ const columns: any[] = [
   transform: translateY(0) !important;
 }
 
-/* 移动端汉堡菜单按钮 */
-.mobile-menu-btn {
-  width: 40px !important;
-  height: 40px !important;
-  min-width: 40px !important;
-  border-radius: 8px !important;
+/* 菜单切换按钮 - 侧边栏折叠时显示 */
+.menu-toggle-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  border-radius: var(--radius-small) !important;
   margin-right: 12px;
   color: var(--text-primary) !important;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
 }
 
-.mobile-menu-btn:hover {
+.menu-toggle-btn:hover {
   background: rgba(0, 0, 0, 0.06) !important;
 }
 
-.mobile-menu-btn :deep(.t-icon) {
-  font-size: 22px;
-}
-
-/* 桌面端隐藏汉堡菜单 */
-.device-desktop .mobile-menu-btn {
-  display: none;
+.menu-toggle-btn :deep(.t-icon) {
+  font-size: 20px;
+  transition: transform var(--transition-fast);
 }
 
 /* ===== 移动端适配 (768px以下) - 作为后备方案 ===== */
@@ -2040,6 +2155,11 @@ const columns: any[] = [
 
   .top-bar-right {
     gap: 4px;
+  }
+
+  /* 移动端隐藏菜单切换按钮 */
+  .menu-toggle-btn {
+    display: none !important;
   }
 
   /* 隐藏桌面端创建按钮 */
@@ -2075,6 +2195,11 @@ const columns: any[] = [
     display: none;
   }
 
+  /* 搜索面板遮罩 - 移动端 */
+  .search-overlay {
+    z-index: 9998;
+  }
+
   /* 搜索面板移动端优化 */
   .search-panel {
     position: fixed;
@@ -2086,7 +2211,7 @@ const columns: any[] = [
     border-radius: 0;
     box-shadow: none;
     background: white;
-    z-index: 999;
+    z-index: 9999;
   }
 
   .search-panel-section {
@@ -2112,8 +2237,7 @@ const columns: any[] = [
   }
 
   /* 隐藏部分按钮 */
-  .icon-button:first-child,
-  .import-btn {
+  .icon-button:first-child {
     display: none !important;
   }
 
@@ -2154,6 +2278,35 @@ const columns: any[] = [
     font-size: 13px;
     white-space: nowrap;
     flex-shrink: 0;
+  }
+
+  /* 功能卡片移动端样式 */
+  .feature-cards {
+    padding: 12px 12px;
+    gap: 8px;
+    max-width: 100%;
+  }
+
+  .feature-card {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .feature-card-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .feature-card-icon :deep(.t-icon) {
+    font-size: 18px;
+  }
+
+  .feature-card-title {
+    font-size: 13px;
+  }
+
+  .feature-card-desc {
+    font-size: 11px;
   }
 
   /* 工具栏 */

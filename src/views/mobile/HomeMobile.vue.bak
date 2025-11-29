@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDocumentStore } from '../stores/document'
-import { useMenuStore } from '../stores/menu'
+import { useDocumentStore } from '../../stores/document'
+import { useMenuStore } from '../../stores/menu'
 import { MessagePlugin, Icon } from 'tdesign-vue-next'
-import Sidebar from '../components/Sidebar.vue'
-import BottomTabBar from '../components/BottomTabBar.vue'
-import { useDevice } from '../composables/useDevice'
+import BottomTabBar from '../../components/BottomTabBar.vue'
+import PullToRefresh from '../../components/PullToRefresh.vue'
+import { useDevice } from '../../composables/useDevice'
 
 
 const router = useRouter()
@@ -40,6 +40,12 @@ const handleAboutClick = () => {
   MessagePlugin.info('关于我们功能开发中...')
 }
 
+// 刷新页面
+const handleRefresh = async () => {
+  await documentStore.loadDocuments()
+  MessagePlugin.success('刷新成功')
+}
+
 // 加载文档列表
 onMounted(async () => {
   await documentStore.loadDocuments()
@@ -53,12 +59,6 @@ const newDocFolder = ref('默认文件夹')
 
 // 主页子标签控制
 const activeSubTab = ref('my-docs')
-
-// 移动端侧边栏控制
-const sidebarVisible = ref(false)
-const toggleSidebar = () => {
-  sidebarVisible.value = !sidebarVisible.value
-}
 
 // 移动端新建菜单控制
 const showCreateMenu = ref(false)
@@ -92,27 +92,27 @@ const currentMenuInfo = computed(() => {
     'home': {
       title: '主页',
       description: '查看和管理你的所有文档',
-      emptyText: '暂无文档'
+      emptyText: '暂无文档，点击右下角"+"按钮创建文档'
     },
     'favorites': {
       title: '我的收藏',
       description: '这里显示你收藏的所有文档',
-      emptyText: '暂无收藏文档'
+      emptyText: '还没有收藏任何文档，点击文档操作菜单可以添加收藏'
     },
     'my-docs': {
-      title: '最近访问',
-      description: '这里显示你最近访问的所有文档',
-      emptyText: '暂无文档'
+      title: '我的文档',
+      description: '这里显示你创建的所有文档',
+      emptyText: '还没有创建任何文档，点击右下角"+"按钮创建文档'
     },
     'shared': {
-      title: '与我共享',
+      title: '共享文档',
       description: '这里显示其他人与你共享的文档',
       emptyText: '暂无共享文档'
     },
     'trash': {
-      title: '收藏',
-      description: '这里显示你收藏的所有文档',
-      emptyText: '还没有收藏任何文档'
+      title: '回收站',
+      description: '这里显示已删除的文档，30天后将永久删除',
+      emptyText: '回收站是空的'
     },
     'my': {
       title: '我的',
@@ -133,15 +133,15 @@ const filteredDocuments = computed(() => {
       // 主页 - 根据子标签过滤
       switch (activeSubTab.value) {
         case 'my-docs':
-          // 最近访问 - 显示当前用户创建的文档
+          // 我的文档 - 显示当前用户创建的文档
           docs = docs.filter(doc => doc.creator === username.value || !doc.creator)
           break
         case 'shared':
-          // 与我共享 - 这里需要后端支持共享字段
+          // 共享空间 - 这里需要后端支持共享字段
           docs = docs.filter(doc => (doc as any).isShared)
           break
         case 'trash':
-          // 收藏 - 这里需要后端支持删除标记
+          // 回收站 - 这里需要后端支持删除标记
           docs = docs.filter(doc => (doc as any).isDeleted)
           break
         default:
@@ -153,11 +153,11 @@ const filteredDocuments = computed(() => {
       docs = docs.filter(doc => (doc as any).isFavorite)
       break
     case 'my-docs':
-      // 最近访问 - 显示当前用户创建的文档
+      // 我的文档 - 显示当前用户创建的文档
       docs = docs.filter(doc => doc.creator === username.value || !doc.creator)
       break
     case 'shared':
-      // 与我共享 - 这里需要后端支持共享字段
+      // 共享文档 - 这里需要后端支持共享字段
       docs = docs.filter(doc => (doc as any).isShared)
       break
     case 'my':
@@ -397,25 +397,11 @@ const columns: any[] = [
 
 <template>
   <div class="document-list-page" :class="[`device-${deviceType}`]">
-    <Sidebar v-model:visible="sidebarVisible" v-if="!isMobile" />
-
-    <Sidebar v-model:visible="sidebarVisible" v-if="isMobile" />
-
-    <div class="main-content">
+    <PullToRefresh :onRefresh="handleRefresh" :disabled="!isMobile">
+      <div class="main-content">
       <!-- 顶部栏 -->
       <div class="top-bar">
         <div class="top-bar-left">
-          <!-- 移动端汉堡菜单按钮 -->
-          <t-button
-            v-if="isMobile"
-            variant="text"
-            shape="square"
-            class="mobile-menu-btn"
-            @click="toggleSidebar"
-          >
-            <t-icon name="menu-fold" />
-          </t-button>
-
           <div class="search-bar">
             <t-input
               v-model="searchKeyword"
@@ -479,11 +465,11 @@ const columns: any[] = [
         </div>
 
         <div class="top-bar-right">
-          <t-button variant="text" shape="square" class="icon-button">
+          <t-button variant="text" shape="square" class="icon-button" v-if="!isMobile">
             <t-icon name="notification" />
           </t-button>
 
-          <t-button variant="text" shape="square" class="icon-button">
+          <t-button variant="text" shape="square" class="icon-button" v-if="!isMobile">
             <t-icon name="help-circle" />
           </t-button>
 
@@ -558,16 +544,6 @@ const columns: any[] = [
             <div class="title-section">
               <h2 class="page-title">{{ currentMenuInfo.title }}</h2>
             </div>
-            <div class="header-actions" v-if="currentMenu !== 'my'">
-              <t-button variant="text" size="small" class="action-link">
-                <template #icon><t-icon name="refresh" /></template>
-                刷新
-              </t-button>
-              <t-button variant="text" size="small" class="action-link">
-                <template #icon><t-icon name="setting" /></template>
-                设置
-              </t-button>
-            </div>
           </div>
         </div>
 
@@ -579,19 +555,19 @@ const columns: any[] = [
               :class="['sub-tab-item', { active: activeSubTab === 'my-docs' }]"
               @click="activeSubTab = 'my-docs'"
             >
-              最近访问
+              我的文档
             </div>
             <div
               :class="['sub-tab-item', { active: activeSubTab === 'shared' }]"
               @click="activeSubTab = 'shared'"
             >
-              与我共享
+              共享空间
             </div>
             <div
               :class="['sub-tab-item', { active: activeSubTab === 'trash' }]"
               @click="activeSubTab = 'trash'"
             >
-              收藏
+              回收站
             </div>
           </div>
 
@@ -822,7 +798,63 @@ const columns: any[] = [
           </div>
         </div>
       </div>
-    </div>
+
+      <!-- 移动端浮动新建按钮和菜单 -->
+      <div class="mobile-fab-container">
+        <div v-if="showCreateMenu" class="create-menu-overlay" @click="closeCreateMenu"></div>
+
+        <div :class="['create-menu-panel', { show: showCreateMenu }]">
+          <div class="create-menu-header">
+            <span class="create-menu-title">新建</span>
+            <t-button variant="text" size="small" shape="square" @click="closeCreateMenu">
+              <t-icon name="close" />
+            </t-button>
+          </div>
+
+          <div class="create-menu-grid">
+            <div class="create-menu-item" @click="handleCreateMenuClick('document')">
+              <div class="create-menu-item-icon" style="background: rgba(91, 143, 249, 0.1);">
+                <t-icon name="file-copy" style="color: #5B8FF9; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">文档</div>
+              </div>
+            </div>
+
+            <div class="create-menu-item" @click="handleCreateMenuClick('spreadsheet')">
+              <div class="create-menu-item-icon" style="background: rgba(29, 127, 62, 0.1);">
+                <t-icon name="table" style="color: #1D7F3E; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">表格</div>
+              </div>
+            </div>
+
+            <div class="create-menu-item" @click="handleCreateMenuClick('mindmap')">
+              <div class="create-menu-item-icon" style="background: rgba(139, 92, 246, 0.1);">
+                <t-icon name="root-list" style="color: #8B5CF6; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">思维导图</div>
+              </div>
+            </div>
+
+            <div class="create-menu-item" @click="handleCreateMenuClick('folder')">
+              <div class="create-menu-item-icon" style="background: rgba(250, 173, 20, 0.1);">
+                <t-icon name="folder" style="color: #FAAD14; font-size: 24px;" />
+              </div>
+              <div class="create-menu-item-text">
+                <div class="create-menu-item-title">文件夹</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="mobile-fab-button" @click="toggleCreateMenu">
+          <t-icon :name="showCreateMenu ? 'close' : 'add'" />
+        </button>
+      </div>
+    </PullToRefresh>
 
     <!-- 移动端底部Tab栏 -->
     <BottomTabBar v-if="isMobile" />

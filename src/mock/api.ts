@@ -75,6 +75,8 @@ export const mockApi = {
     await delay()
 
     const documents = getDB()
+    const currentUser = localStorage.getItem('username') || 'demo'
+
     const newDoc: Document = {
       id: generateId(),
       title: data.title || '无标题文档',
@@ -82,7 +84,9 @@ export const mockApi = {
       content: data.content || '',
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      folder: data.folder
+      folder: data.folder,
+      creator: currentUser,
+      updater: currentUser
     }
 
     documents.unshift(newDoc)
@@ -111,12 +115,15 @@ export const mockApi = {
     }
 
     const current = documents[index]
+    const currentUser = localStorage.getItem('username') || 'demo'
+
     const updated: Document = {
       ...current,
       ...updates,
       id: current.id,
       createdAt: current.createdAt,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      updater: currentUser
     }
 
     documents[index] = updated

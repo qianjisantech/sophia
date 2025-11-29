@@ -4,9 +4,64 @@ import type { RouteRecordRaw } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    name: 'Home',
-    component: () => import('../views/Home.vue'),
-    meta: { requiresAuth: true }
+    component: () => import('../layouts/MainLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        redirect: '/home'
+      },
+      {
+        path: 'home',
+        name: 'Home',
+        component: () => import('../views/HomeEntry.vue')
+      },
+      {
+        path: 'cloud',
+        name: 'Cloud',
+        component: () => import('../views/HomeEntry.vue')
+      },
+      {
+        path: 'wiki',
+        name: 'Wiki',
+        component: () => import('../views/WikiView.vue')
+      },
+      {
+        path: 'rbac',
+        name: 'RBAC',
+        component: () => import('../views/HomeEntry.vue')
+      },
+      {
+        path: 'trash',
+        name: 'Trash',
+        component: () => import('../views/HomeEntry.vue')
+      },
+      {
+        path: 'document/:id',
+        name: 'DocumentEditor',
+        component: () => import('../views/DocumentEditor.vue')
+      },
+      {
+        path: 'spreadsheet/:id',
+        name: 'SpreadsheetView',
+        component: () => import('../views/SpreadsheetView.vue')
+      },
+      {
+        path: 'mindmap/:id',
+        name: 'MindmapView',
+        component: () => import('../views/MindmapView.vue')
+      },
+      {
+        path: 'folder/:id',
+        name: 'FolderView',
+        component: () => import('../views/FolderView.vue')
+      },
+      {
+        path: 'search',
+        name: 'Search',
+        component: () => import('../views/mobile/SearchMobile.vue')
+      }
+    ]
   },
   {
     path: '/login',
@@ -23,30 +78,6 @@ const routes: RouteRecordRaw[] = [
     path: '/test',
     name: 'Test',
     component: () => import('../views/Test.vue')
-  },
-  {
-    path: '/document/:id',
-    name: 'DocumentEditor',
-    component: () => import('../views/DocumentEditor.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/spreadsheet/:id',
-    name: 'SpreadsheetView',
-    component: () => import('../views/SpreadsheetView.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/mindmap/:id',
-    name: 'MindmapView',
-    component: () => import('../views/MindmapView.vue'),
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/folder/:id',
-    name: 'FolderView',
-    component: () => import('../views/FolderView.vue'),
-    meta: { requiresAuth: true }
   },
   {
     path: '/collaborative-demo',
@@ -83,7 +114,7 @@ router.beforeEach((to, from, next) => {
   }
   // 如果已登录访问登录页，跳转到首页
   else if (to.path === '/login' && isLoggedIn) {
-    next('/')
+    next('/home')
   }
   else {
     next()
